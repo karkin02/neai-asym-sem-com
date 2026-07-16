@@ -1,0 +1,27 @@
+# Ignore all log files
+*.log
+
+# Ignore temporary files
+*.tmp
+*.temp
+
+# Ignore build / dist directories
+build/
+dist/
+*.out
+
+# Ignore environment / config files with secrets
+.env
+.env.local
+.env.*.local
+.venv
+
+# Ignore OS/editor metadata
+.DS_Store          # macOS
+Thumbs.db          # Windows
+*.swp              # Vim swap
+*.swo
+
+# Ignore common dependency folders (optional)
+node_modules/
+vendor/
