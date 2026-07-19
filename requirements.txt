@@ -9,4 +9,7 @@ opencv-python==4.10.0.84
 Pillow==10.4.0
 pandas==2.3.0
 plotly==5.24.1
-ai2thor==5.0.0
+python-dotenv
+matplotlib
+mujoco
+genesis-world
