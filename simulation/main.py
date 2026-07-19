@@ -1,11 +1,15 @@
 from env import GenesisEnv
-from baseline1 import GPTVisionPlanner
-from baseline2 import JPEGVisionPlanner
+from llm_planner import VisionPlanner
+from img_encoder import RawEncoder, JPEGEncoder
+import genesis as gs
 import time
 import numpy as np
 import pandas as pd
+import os
+from openai import OpenAI
 
 def run_episode(env, planner, name, episode):
+    
     obs = env.reset()
     done = False
     step = 0
@@ -29,48 +33,58 @@ def run_episode(env, planner, name, episode):
         log["tokens"].append(llm_info["tokens"])
 
         obs, reward, done, info = env.step(action)
-        print(name, "episode", episode, "step", step, action)
+        print(f"{name} | Episode {episode} | Step {step} | {action}")
         step += 1
 
     log["steps"] = step
     log["success"] = reward > 0
     return log
 
-# Create planners
-b1 = GPTVisionPlanner()
-b2 = JPEGVisionPlanner()
+client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY"),
+    timeout=60.0, 
+    max_retries=3
+)
+
+TASK = "navigation"
+gs.init(backend=gs.cpu)
+
+b1 = VisionPlanner(
+    encoder=RawEncoder(),
+    task=TASK
+)
+
+b2 = VisionPlanner(
+    encoder=JPEGEncoder(quality=30),
+    task=TASK
+)
 
 results = []
 N_EPISODES = 20
 
-for ep in range(N_EPISODES):
-    env = GenesisEnv()
-    results.append(
-        run_episode(env, b1, "Raw RGB", ep)
-    )
-    env.close()
+for name, planner in [("Raw RGB", b1), ("JPEG", b2)]:
+    for ep in range(N_EPISODES):
+        env = GenesisEnv(task=TASK)
 
-for ep in range(N_EPISODES):
-    env = GenesisEnv()
-    results.append(
-        run_episode(env, b2, "JPEG", ep)
-    )
-    env.close()
+        results.append(
+            run_episode(env, planner, name, ep)
+        )
+        env.close()
 
-rows = []
-
-for r in results:
-    rows.append({
+df = pd.DataFrame([
+    {
         "baseline": r["baseline"],
         "episode": r["episode"],
-        "success": r["success"],
+        "success": int(r["success"]),
         "avg_bytes_step": np.mean(r["bytes"]),
         "avg_latency": np.mean(r["latency"]),
         "avg_tokens": np.mean(r["tokens"]),
         "steps": r["steps"]
-    })
+    }
+    for r in results
+])
 
-df = pd.DataFrame(rows)
+print("Average Results")
 print(df.groupby("baseline").mean(numeric_only=True))
 
 

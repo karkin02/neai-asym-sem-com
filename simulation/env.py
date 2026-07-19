@@ -4,18 +4,11 @@ import matplotlib.pyplot as plt
 import time
 import os
 
-
 robot_file = os.path.join(os.getcwd(), "hello_robot_stretch/assets/stretch.xml")
-
 
 class GenesisEnv:
 
-    def __init__(self):
-
-        # Initialize Genesis
-        gs.init(
-            backend=gs.cpu
-        )
+    def __init__(self, task="navigation", max_steps=100): # or "pick_place"
 
         # Create Simulation Scene
         self.scene = gs.Scene(
@@ -34,8 +27,18 @@ class GenesisEnv:
             )
         )
 
+        # Add table
+        self.table = self.scene.add_entity(
+            gs.morphs.Box(
+                pos=(0.8, 0.0, 0.35),
+                size=(0.3, 0.3, 0.35)
+            )
+        )
+
+        # Add object
         self.object = self.scene.add_entity(
             gs.morphs.Box(
+                pos=(0.0, 0.0, 0.025),
                 size=(0.05, 0.05, 0.05)
             )
         )
@@ -43,7 +46,7 @@ class GenesisEnv:
         # Add Camera
         self.camera = self.scene.add_camera(
             res=(640, 480),
-            pos=(3, -3, 2),
+            pos=(2.5, -2.5, 2),
             lookat=(0, 0, 0.5),
             fov=60
         )
@@ -54,10 +57,14 @@ class GenesisEnv:
         self.initial_obj_pos = self.object.get_pos().clone()
         self.initial_obj_quat = self.object.get_quat().clone()
         
-        self.task = "navigation"      # or "pick_place"
+        self.task = task 
         self.goal_object = self.object
-        self.goal_position = self.goal_object.get_pos().clone()
-        self.max_steps = 100
+        self.goal_position = self.object.get_pos().clone()
+        if self.task == "pick_place":
+            self.place_position = self.table.get_pos().clone()
+            self.place_position[2] += 0.35 + 0.025
+
+        self.max_steps = max_steps
         self.step_count = 0
 
     def reset(self):
@@ -98,7 +105,11 @@ class GenesisEnv:
         else:
             rgb = output
 
-        return rgb[:, :, :3]
+        rgb = rgb[:, :, :3]
+        if rgb.dtype != np.uint8:
+            rgb = (rgb * 255).astype(np.uint8)
+
+        return rgb
 
     def execute(self, action):
 
