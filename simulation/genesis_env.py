@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import time
 import os
 
-robot_file = os.path.join(os.getcwd(), "hello_robot_stretch/assets/stretch.xml")
+robot_file = os.path.join(os.getcwd(), "simulation/hello_robot_stretch/assets/stretch.xml")
 
 class GenesisEnv:
 
