@@ -1,0 +1,10 @@
+# Web UI dependencies (in addition to the root requirements.txt)
+flask
+
+# Pulled in transitively by the pipeline the UI drives:
+opencv-python
+ultralytics
+openai
+python-dotenv
+gymnasium
+numpy

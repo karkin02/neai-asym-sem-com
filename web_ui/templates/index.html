@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Asymmetric Semantic Communication — Live Pipeline</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+  <header>
+    <h1>Asymmetric Semantic Communication</h1>
+    <p class="sub">Edge: webcam → YOLOv8 → compact JSON &nbsp;•&nbsp; Cloud: GPT-4o-mini → robot action → sim</p>
+  </header>
+
+  <section class="controls">
+    <label>
+      Task
+      <select id="task">
+        {% for t in tasks %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="grow">
+      Instruction
+      <input id="instruction" type="text" value="move toward the cup" />
+    </label>
+    <button id="btn-start" class="primary">Start</button>
+    <button id="btn-instruction">Send instruction</button>
+    <button id="btn-reset">Reset episode</button>
+    <button id="btn-stop" class="danger">Stop</button>
+    <span id="status" class="status">idle</span>
+  </section>
+
+  <main class="grid">
+    <!-- EDGE (camera) — kept next to the sim -->
+    <div class="panel">
+      <h2>① Edge — camera + detection</h2>
+      <img id="webcam" src="{{ url_for('webcam_feed') }}" alt="webcam feed" />
+    </div>
+
+    <!-- SIM — sits directly beside the camera -->
+    <div class="panel">
+      <h2>④ Robot sim — executing action</h2>
+      <img id="sim" src="{{ url_for('sim_feed') }}" alt="sim feed" />
+      <div id="control-mode" class="caption">–</div>
+      <div id="legend" class="legend"></div>
+      <div class="metrics">
+        <div class="metric"><span class="k">Action</span><span id="action" class="v">–</span></div>
+        <div class="metric"><span class="k">Reward</span><span id="reward" class="v">–</span></div>
+        <div class="metric"><span class="k">Success</span><span id="success" class="v">–</span></div>
+        <div class="metric"><span class="k">Step</span><span id="step" class="v">–</span></div>
+      </div>
+    </div>
+
+    <!-- SEMANTIC PAYLOAD -->
+    <div class="panel">
+      <h2>② Semantic payload (uplink)</h2>
+      <div class="metrics">
+        <div class="metric"><span class="k">Raw frame</span><span id="raw-bytes" class="v">–</span></div>
+        <div class="metric"><span class="k">JSON payload</span><span id="payload-bytes" class="v">–</span></div>
+        <div class="metric"><span class="k">Compression</span><span id="ratio" class="v ratio">–</span></div>
+      </div>
+      <pre id="payload" class="code">[]</pre>
+    </div>
+
+    <!-- CLOUD LLM -->
+    <div class="panel">
+      <h2>③ Cloud — GPT-4o-mini plan</h2>
+      <div class="metric wide"><span class="k">LLM status</span><span id="llm-status" class="v">–</span></div>
+      <pre id="llm-parsed" class="code">{}</pre>
+      <details>
+        <summary>Raw LLM response</summary>
+        <pre id="llm-raw" class="code small">–</pre>
+      </details>
+    </div>
+  </main>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
