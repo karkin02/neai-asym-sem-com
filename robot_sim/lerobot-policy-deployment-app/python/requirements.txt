@@ -1,0 +1,14 @@
+# FILE: requirements.txt
+#
+# DESCRIPTION:
+#   Python package dependencies for LeRobot Policy Deployment App.
+#   Specifies exact versions optimized for Arduino UNO Q ARM deployment.
+#
+# BRIEF:
+#   Lists NumPy for MLP inference on UNO Q.
+#
+# AUTHOR: Kevin Thomas
+# CREATION DATE: February 28, 2026
+# UPDATE DATE: February 28, 2026
+
+numpy==2.4.2

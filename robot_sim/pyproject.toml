@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools==75.8.2", "wheel==0.45.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "lerobot-sim"
+version = "0.1.0"
+description = "Full simulated environment compatible with HuggingFace LeRobot"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10,<3.14"
+authors = [{ name = "LeRobot Sim Contributors" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = ["numpy==2.4.2", "gymnasium==1.2.3"]
+
+[project.optional-dependencies]
+viz = ["pygame==2.6.1"]
+hub = ["huggingface_hub==1.5.0"]
+all = ["pygame==2.6.1", "huggingface_hub==1.5.0"]
+dev = [
+    "pygame==2.6.1",
+    "huggingface_hub==1.5.0",
+    "pytest==9.0.2",
+    "ruff==0.15.4",
+    "black==26.1.0",
+]
+
+[project.scripts]
+lerobot-sim = "run_sim:_cli_main"
+
+[project.urls]
+Homepage = "https://huggingface.co/lerobot"
+Repository = "https://github.com/huggingface/lerobot"
+Documentation = "https://huggingface.co/docs/lerobot"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["lerobot_sim*"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "D"]
+ignore = ["D100", "D104"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.black]
+line-length = 120
+target-version = ["py310"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

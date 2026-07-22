@@ -1,0 +1,70 @@
+<!--
+SPDX-FileCopyrightText: Copyright (C) Kevin Thomas
+
+SPDX-License-Identifier: Apache-2.0
+-->
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LPDA</title>
+    <link rel="stylesheet" type="text/css" href="style.css">
+</head>
+
+<body>
+    <div>
+        <div class="header">
+            <h1 class="arduino-text">LeRobot Policy Deployment App</h1>
+        </div>
+
+        <div class="container">
+            <form id="state-form">
+                <div class="form-group">
+                    <label for="agent-x">Agent X:</label>
+                    <input type="text" id="agent-x" placeholder="e.g., 0.5" required>
+                    <div class="error-msg" id="ax-error">Please enter a valid float (e.g., 0.5)</div>
+                </div>
+                <div class="form-group">
+                    <label for="agent-y">Agent Y:</label>
+                    <input type="text" id="agent-y" placeholder="e.g., 0.5" required>
+                    <div class="error-msg" id="ay-error">Please enter a valid float (e.g., 0.5)</div>
+                </div>
+                <div class="form-group">
+                    <label for="block-x">Block X:</label>
+                    <input type="text" id="block-x" placeholder="e.g., 0.3" required>
+                    <div class="error-msg" id="bx-error">Please enter a valid float (e.g., 0.3)</div>
+                </div>
+                <div class="form-group">
+                    <label for="block-y">Block Y:</label>
+                    <input type="text" id="block-y" placeholder="e.g., 0.7" required>
+                    <div class="error-msg" id="by-error">Please enter a valid float (e.g., 0.7)</div>
+                </div>
+                <div class="form-group">
+                    <label for="target-x">Target X:</label>
+                    <input type="text" id="target-x" placeholder="e.g., 0.5" required>
+                    <div class="error-msg" id="tx-error">Please enter a valid float (e.g., 0.5)</div>
+                </div>
+                <div class="form-group">
+                    <label for="target-y">Target Y:</label>
+                    <input type="text" id="target-y" placeholder="e.g., 0.5" required>
+                    <div class="error-msg" id="ty-error">Please enter a valid float (e.g., 0.5)</div>
+                </div>
+                <button type="submit" id="predict-btn">Predict Action</button>
+            </form>
+
+            <div id="result" class="result" style="display:none;">
+                <span id="result-text"></span>
+            </div>
+
+            <div id="error-container" class="error-message" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script src="libs/socket.io.min.js"></script>
+    <script src="app.js"></script>
+</body>
+
+</html>
