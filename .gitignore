@@ -6,6 +6,7 @@
 
 # Generated datasets, checkpoints, evaluations, and replays
 outputs/
+smolvla-*.zip
 
 # Python build and test artifacts
 __pycache__/

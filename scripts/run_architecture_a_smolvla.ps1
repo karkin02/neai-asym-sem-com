@@ -38,10 +38,22 @@ if ($ActionSmoothing -le 0.0 -or $ActionSmoothing -gt 1.0) {
 }
 
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
-$checkpoint = Join-Path $projectRoot $manifest.checkpoint
-if (-not (Test-Path -LiteralPath $checkpoint)) {
-    throw "Selected checkpoint not found at $checkpoint"
+$checkpointRelative = $manifest.checkpoint
+$checkpointRole = "baseline"
+if (
+    $Scene -eq "warehouse_normal" -and
+    $null -ne $manifest.scenario_checkpoints -and
+    $null -ne $manifest.scenario_checkpoints.warehouse_normal
+) {
+    $checkpointRelative = $manifest.scenario_checkpoints.warehouse_normal.checkpoint
+    $checkpointRole = $manifest.scenario_checkpoints.warehouse_normal.status
 }
+$checkpoint = Join-Path $projectRoot $checkpointRelative
+if (-not (Test-Path -LiteralPath $checkpoint)) {
+    throw "Selected $checkpointRole checkpoint not found at $checkpoint"
+}
+Write-Output "Checkpoint role: $checkpointRole"
+Write-Output "Checkpoint path: $checkpoint"
 
 if ($Device -eq "cuda") {
     $gpuCheck = @'

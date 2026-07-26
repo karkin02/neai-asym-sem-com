@@ -14,6 +14,18 @@ FPS = 20
 FRAME_WIDTH = 320
 FRAME_HEIGHT = 240
 STEPS_PER_WAYPOINT = 6
+TRAINING_SCENARIOS = (
+    "pick_place",
+    "warehouse_normal",
+    "barcode_missing",
+    "package_damaged",
+)
+
+SCENARIO_INSTRUCTIONS = {
+    "warehouse_normal": "Pick up the package and place it on the conveyor.",
+    "barcode_missing": "The package barcode is missing. Place it in the blue inspection tray.",
+    "package_damaged": "The package is damaged. Place it in the yellow rejection tray.",
+}
 
 
 @dataclass(frozen=True)
@@ -158,7 +170,11 @@ def collect_episode(
 ) -> DemonstrationResult:
     probe = environment.reset(seed=seed, instruction="")
     target_name = str(probe.metadata["target_name"])
-    instruction = f"Pick up the red sample and place it in the {target_name}."
+    scenario = str(probe.metadata["scenario"])
+    instruction = SCENARIO_INSTRUCTIONS.get(
+        scenario,
+        f"Pick up the red sample and place it in the {target_name}.",
+    )
     observation = environment.reset(seed=seed, instruction=instruction)
     initial_sample_position = list(observation.metadata["sample_position"])
     policy = ScriptedIKPickPlacePolicy(
@@ -207,6 +223,7 @@ def collect_episode(
         "instruction": instruction,
         "initial_sample_position": initial_sample_position,
         "target_name": target_name,
+        "scenario": scenario,
         "success": success,
         "joint_names": environment.JOINT_NAMES,
         "frames": len(actions),
@@ -283,6 +300,12 @@ def main() -> None:
         help="Select balanced low-depth object starts instead of consecutive seeds.",
     )
     parser.add_argument(
+        "--scenario",
+        choices=TRAINING_SCENARIOS,
+        default="pick_place",
+        help="Scene and routing policy represented by every collected episode.",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path("outputs/demonstrations"),
@@ -293,6 +316,7 @@ def main() -> None:
         realtime=False,
         observation_images=False,
         kinematic_control=True,
+        scenario=args.scenario,
     )
     try:
         seeds = (
@@ -326,6 +350,7 @@ def main() -> None:
             else 0.0
         ),
         "output": str(args.output),
+        "scenario": args.scenario,
     }
     print(json.dumps(summary, indent=2))
 

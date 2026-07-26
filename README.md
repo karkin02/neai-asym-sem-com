@@ -124,10 +124,37 @@ New-Item -ItemType Directory -Force (Split-Path $target) | Out-Null
 Copy-Item -Recurse -Force $source $target
 ```
 
-The checkpoint is approximately 0.84 GB and is not suitable for ordinary Git
-history. Distribute it through a release asset, Hugging Face Hub, object storage,
-or Git LFS. Without it, simulation tests and scripted warehouse demos still run;
-only trained SmolVLA inference is unavailable.
+Warehouse-normal routing additionally requires the separately distributed
+specialist archive. Restore both release assets with:
+
+```powershell
+Expand-Archive `
+  -LiteralPath ".\smolvla-pickplace-baseline-step1500.zip" `
+  -DestinationPath ".\outputs\train\smolvla_pickplace_50\checkpoints\last" `
+  -Force
+
+Expand-Archive `
+  -LiteralPath ".\smolvla-warehouse-general200-step1500.zip" `
+  -DestinationPath ".\outputs\train\warehouse200\checkpoints\001500" `
+  -Force
+```
+
+Verified release assets:
+
+```text
+smolvla-pickplace-baseline-step1500.zip
+  bytes:  720784384
+  SHA256: 22B0BB8E0A1861DBFD5554C9B20A21478B7766815B06F9109E1687A9808324FB
+
+smolvla-warehouse-general200-step1500.zip
+  bytes:  720850797
+  SHA256: 27EDFB679720345C577C8F78B3FAC2A24296CC36001A16B50AE6EEA860418BCD
+```
+
+Each checkpoint archive is approximately 0.72 GB and is not suitable for
+ordinary Git history. Distribute them through release assets, Hugging Face Hub,
+object storage, or Git LFS. Without them, simulation tests and scripted warehouse
+demos still run; only trained SmolVLA inference is unavailable.
 
 ## Selected Model
 
@@ -142,6 +169,19 @@ Mode:       open-loop 50-action chunk
 
 Later fine-tuning runs were rejected because they scored below this checkpoint
 on the fixed held-out benchmark.
+
+The run wrapper also supports a narrowly scoped warehouse specialist recorded
+under `scenario_checkpoints` in the same manifest:
+
+```text
+pick_place          -> selected baseline (12/20 original benchmark)
+warehouse_normal    -> warehouse specialist (11/20 versus baseline 8/20)
+unexpected_obstacle -> selected baseline plus pre-execution collision gate
+```
+
+This routing keeps the warehouse gain isolated from the specialist's regression
+on general pick-and-place. The wrapper prints the checkpoint role and resolved
+path before model loading.
 
 ## Environment
 

@@ -5,6 +5,10 @@ param(
     [string]$DatasetRoot = "outputs\lerobot_dataset_50",
     [string]$DatasetRepoId = "local/architecture_a_so101_pickplace_50",
     [string]$RunName = "smolvla_pickplace_50",
+    [double]$LearningRate = 0.0001,
+    [int]$WarmupSteps = 1000,
+    [int]$DecaySteps = 30000,
+    [int]$SaveFreq = 20000,
     [string]$Environment = ".venv312-rocm"
 )
 
@@ -111,6 +115,10 @@ try {
     $env:SMOLVLA_BATCH_SIZE = "$BatchSize"
     $env:SMOLVLA_STEPS = "$Steps"
     $env:SMOLVLA_DATASET_REPO_ID = $DatasetRepoId
+    $env:SMOLVLA_LEARNING_RATE = "$LearningRate"
+    $env:SMOLVLA_WARMUP_STEPS = "$WarmupSteps"
+    $env:SMOLVLA_DECAY_STEPS = "$DecaySteps"
+    $env:SMOLVLA_SAVE_FREQ = "$SaveFreq"
     $launchCode = @'
 import os
 import sys
@@ -136,6 +144,10 @@ sys.argv = [
     "--job_name=architecture_a_smolvla",
     f"--batch_size={os.environ['SMOLVLA_BATCH_SIZE']}",
     f"--steps={os.environ['SMOLVLA_STEPS']}",
+    f"--policy.optimizer_lr={os.environ['SMOLVLA_LEARNING_RATE']}",
+    f"--policy.scheduler_warmup_steps={os.environ['SMOLVLA_WARMUP_STEPS']}",
+    f"--policy.scheduler_decay_steps={os.environ['SMOLVLA_DECAY_STEPS']}",
+    f"--save_freq={os.environ['SMOLVLA_SAVE_FREQ']}",
     "--num_workers=0",
     "--wandb.enable=false",
 ]

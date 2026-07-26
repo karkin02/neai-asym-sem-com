@@ -2,6 +2,22 @@
   "model": "smolvla",
   "status": "selected",
   "checkpoint": "outputs/train/smolvla_pickplace_50/checkpoints/last/pretrained_model",
+  "scenario_checkpoints": {
+    "warehouse_normal": {
+      "checkpoint": "outputs/train/warehouse200/checkpoints/001500/pretrained_model",
+      "status": "warehouse_specialist",
+      "benchmark": {
+        "device": "cpu",
+        "seed_start": 1010,
+        "episodes": 20,
+        "successes": 11,
+        "success_rate": 0.55,
+        "baseline_successes": 8,
+        "baseline_success_rate": 0.4
+      },
+      "selection_reason": "Best warehouse-normal result; safely stopped the protected obstacle, but remains isolated because general pick-place scored 9/20."
+    }
+  },
   "execution_mode": "open_loop",
   "max_steps": 50,
   "action_smoothing": {
