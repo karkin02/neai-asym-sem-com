@@ -1,15 +1,3 @@
-fastapi==0.115.0
-uvicorn==0.30.6
-ultralytics==8.3.0
-anthropic==0.34.2
-openai==1.51.0
-httpx==0.27.2
-numpy==1.26.4
-opencv-python==4.10.0.84
-Pillow==10.4.0
-pandas==2.3.0
-plotly==5.24.1
-python-dotenv
-matplotlib
-mujoco
-genesis-world
+# CPU/development installation. For AMD or NVIDIA acceleration, install the
+# matching PyTorch wheels first with the vendor setup script.
+-e .[lerobot]

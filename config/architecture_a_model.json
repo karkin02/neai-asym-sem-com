@@ -1,0 +1,27 @@
+{
+  "model": "smolvla",
+  "status": "selected",
+  "checkpoint": "outputs/train/smolvla_pickplace_50/checkpoints/last/pretrained_model",
+  "execution_mode": "open_loop",
+  "max_steps": 50,
+  "action_smoothing": {
+    "method": "zero_phase_three_tap",
+    "production_center_weight": 1.0,
+    "visualization_center_weight": 0.35,
+    "gripper_filtered": false,
+    "tradeoff": "Visualization smoothing scored 10/20 versus 12/20 unsmoothed."
+  },
+  "benchmark": {
+    "seed_start": 1010,
+    "episodes": 20,
+    "successes": 12,
+    "success_rate": 0.6
+  },
+  "selection_reason": "Best generalization across the fixed 20-seed benchmark.",
+  "rejected_runs": {
+    "smolvla_pickplace_50_stage2": "5/10 on seeds 1010-1019",
+    "smolvla_pickplace_100_diverse": "4/10 on seeds 1010-1019",
+    "smolvla_pickplace_100_spatial": "11/20 combined benchmark",
+    "smolvla_pickplace_90_hard": "8/20 combined benchmark"
+  }
+}

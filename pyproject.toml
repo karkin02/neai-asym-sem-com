@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=71,<81"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "edge-vla-architecture-a"
+version = "0.1.0"
+description = "Architecture A scaffold for a local embodied VLA policy."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "mujoco==3.10.0",
+    "numpy==2.2.6",
+    "pillow==12.2.0",
+    "pybullet==3.2.7",
+    "torch>=2.11,<2.12",
+    "truststore==0.10.4",
+]
+
+[project.optional-dependencies]
+lerobot = [
+    "datasets==4.8.5",
+    "fsspec[http]==2026.2.0",
+    "lerobot[dataset,smolvla]==0.6.0",
+    "setuptools==80.10.2",
+]
+
+[project.scripts]
+run-architecture-a = "architecture_a.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

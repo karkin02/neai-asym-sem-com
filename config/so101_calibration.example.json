@@ -1,0 +1,12 @@
+{
+  "status": "EXAMPLE_ONLY_NOT_CALIBRATED",
+  "units": "hardware_specific",
+  "joints": {
+    "shoulder_pan": {"offset": 0.0, "scale": 1.0, "minimum": -1.8, "maximum": 1.8},
+    "shoulder_lift": {"offset": 0.0, "scale": 1.0, "minimum": -1.7, "maximum": 1.5},
+    "elbow_flex": {"offset": 0.0, "scale": 1.0, "minimum": -2.0, "maximum": 1.8},
+    "wrist_flex": {"offset": 0.0, "scale": 1.0, "minimum": -1.8, "maximum": 1.8},
+    "wrist_roll": {"offset": 0.0, "scale": 1.0, "minimum": -2.8, "maximum": 2.8},
+    "gripper": {"offset": 0.0, "scale": 1.0, "minimum": 0.0, "maximum": 0.025}
+  }
+}

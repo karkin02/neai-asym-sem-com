@@ -1,27 +1,31 @@
-# Ignore all log files
-*.log
+# Virtual environments and package caches
+.venv*/
+.uv-cache/
+.uv-python/
+.hf-cache/
 
-# Ignore temporary files
-*.tmp
-*.temp
+# Generated datasets, checkpoints, evaluations, and replays
+outputs/
 
-# Ignore build / dist directories
+# Python build and test artifacts
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
 build/
 dist/
-*.out
 
-# Ignore environment / config files with secrets
+# Local tools and editor state
+.agents/
+.codex/
+work/
+.idea/
+.vscode/
+
+# Local credentials
 .env
-.env.local
-.env.*.local
-.venv
-
-# Ignore OS/editor metadata
-.DS_Store          # macOS
-Thumbs.db          # Windows
-*.swp              # Vim swap
-*.swo
-
-# Ignore common dependency folders (optional)
-node_modules/
-vendor/
+.env.*
+*.pem
+*.key
+credentials*.json
