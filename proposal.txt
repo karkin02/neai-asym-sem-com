@@ -1,0 +1,36 @@
+Project Proposal Draft
+
+Title
+Networked vs. Co-located Embodied Intelligence: A Comparative Study of Edge, Cloud, and Hybrid Vision-Language-Action Control
+
+Problem Statement
+Embodied AI systems face a fundamental placement decision: run the decision-making model directly on the robot (fast, but limited by on-device compute), or offload reasoning to a more capable cloud model (smarter, but subject to network latency, bandwidth limits, and connectivity failures). Most existing robot learning work picks one side of this tradeoff without systematically measuring the cost of the alternative.
+
+Objective
+This project builds and benchmarks three control architectures for a simulated robotic pick-and-place task, using identical perception input and task conditions, to quantify the real cost/benefit tradeoff between co-located, fully networked, and hybrid decision-making in embodied AI.
+
+System Overview
+Shared perception pipeline (all architectures): a webcam frame passes through YOLOv8n object detection, which is converted into a structured scene graph describing object identities and spatial relations (e.g. "sample_B3 left_of tray"). CLIP then grounds the instruction's referring expression against detected object crops, producing a similarity/confidence score that becomes the shared decision signal for routing.
+
+Architecture A — Co-located edge VLA: instruction, camera views, and robot state go directly to a locally-running SmolVLA policy, which outputs SO-101 joint targets executed in MuJoCo — no network involved. This is the baseline for latency and demonstrates the ceiling on speed but the floor on task generalization, since SmolVLA is a small fine-tuned model.
+
+Architecture B — Fully networked/split: the scene representation (tested at multiple compression levels — full JSON, scene graph, or raw image) crosses a simulated network channel to GPT-4o-mini, which reasons over it and returns a structured action target executed by a scripted controller. This represents the "smart cloud, dumb edge" extreme, and is used to measure the cost of network dependency (latency, bandwidth, degraded-channel failure).
+
+Architecture C — Hybrid/adaptive: CLIP confidence is checked first. High-confidence, recognized instructions are handled entirely locally by SmolVLA at zero network cost. Low-confidence or unrecognized instructions escalate over the same simulated channel to GPT-4o-mini, exactly as in Architecture B, before handing the resulting action back for execution. This is the proposed contribution: an uncertainty-gated routing policy that only pays the network cost when local capability is insufficient.
+
+Relevance to Networked Embodied AI
+Embodied agents increasingly need to operate under real-world constraints — intermittent connectivity, bandwidth caps, and latency-sensitive control loops — that pure robot-learning benchmarks ignore. This project directly models that constraint space with a channel simulator (bandwidth cap, latency, clean vs. degraded conditions), letting all three architectures be compared under the same simulated network stress rather than assuming unlimited connectivity, which is the core open problem in deploying VLA models beyond lab settings.
+
+Evaluation Metrics
+Task success rate (per architecture, per condition)
+
+End-to-end decision latency
+
+Network payload size in bytes (B and C only)
+
+CLIP escalation rate (C only) — the fraction of instructions handled locally vs. escalated
+
+Anomaly/failure rate (collisions, failed grasps) via the execution-side anomaly checker
+
+Demo Deliverable
+A live or recorded MuJoCo simulation run showing the robot executing instructions under all three architectures side by side, paired with a results table/chart comparing success rate, latency, and payload size across architectures and network conditions — with Architecture C's escalation rate as the headline result, showing how much cloud dependency can be avoided without sacrificing task success.
