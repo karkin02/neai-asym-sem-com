@@ -1,4 +1,21 @@
-# Architecture A: Co-Located Edge VLA
+# Networked vs. Co-located Embodied Intelligence (Architectures A / B / C)
+
+This repository benchmarks three control architectures for the same simulated
+SO-101 pick-and-place task, under identical perception input and task
+conditions:
+
+- **Architecture A — co-located edge VLA** (local SmolVLA, no network). Built and
+  tested; documented first and in most depth below.
+- **Architecture B — fully networked** (compressed scene → simulated channel →
+  GPT-4o-mini → scripted controller).
+- **Architecture C — hybrid/adaptive** (CLIP-confidence gate: local SmolVLA when
+  confident/recognized, else escalate over the B path).
+
+B and C are built on top of A and reuse its MuJoCo environment for execution —
+see [Architectures B and C](#architectures-b-and-c) and
+[Combined comparison](#combined-comparison-a--b--c).
+
+## Architecture A: Co-Located Edge VLA
 
 Architecture A runs an embodied vision-language-action policy locally:
 
@@ -450,6 +467,206 @@ reduced held-out success.
 The test suite covers the architecture runner, mock policy behavior, PyBullet
 rendering, SO-101 MuJoCo control, inverse kinematics, demonstration alignment,
 and the SmolVLA adapter boundary.
+
+## Architectures B and C
+
+Architecture A (above) is the co-located baseline: instruction + cameras + state
+go straight to a local SmolVLA policy. Architectures B and C are built **on top
+of A** and reuse its MuJoCo environment for execution — they change only *where
+the action decision comes from*, never how the robot is physically stepped.
+
+- **Architecture B — fully networked.** The scene representation is compressed,
+  sent across a simulated network channel to an OpenAI GPT-4o-mini planner, and
+  the returned target is executed by a scripted controller through A's env.
+- **Architecture C — hybrid/adaptive.** A routing gate checks CLIP confidence
+  first: high-confidence, recognized instructions run locally on SmolVLA at zero
+  network cost; everything else escalates over the same channel + GPT-4o-mini
+  path as B.
+
+Both share one **real** perception pipeline (unlike the warehouse demo's
+`simulated_yolo_contract` / `simulated_clip_contract` values, these run actual
+models):
+
+- **YOLOv8n detection** — `shared.perception.YoloDetector.detect(frame)` returns
+  `Detection(label, confidence, bbox)` records.
+- **Scene graph** — `shared.perception.build_scene_graph(detections, w, h, zones=…)`
+  turns detections into JSON objects plus spatial relations (`left_of` / `above`
+  / `near`, and object-`in`/`near`-zone), shaped like
+  `SO101MuJoCoEnvironment.scene_graph()` so it fits the existing handoff payloads.
+- **CLIP grounding** — `shared.perception.ClipGrounder.score(expression, crops)`
+  returns a per-object similarity and a single confidence in `[0, 1]`. That
+  confidence is the shared routing/uncertainty signal Architecture C gates on.
+
+Each component is a standalone, injectable unit (heavy models load lazily), so
+the perception tests run with no model weights or network.
+
+### B/C setup
+
+These dependencies are additive to Architecture A's stack and install into the
+**same** environment that has `mujoco` and `lerobot`. They are declared as the
+`architectures_bc` optional extra (`ultralytics`, `open-clip-torch`, `openai`):
+
+```powershell
+& ".\.venv312-rocm\Scripts\python.exe" -m pip install -e ".[architectures_bc]"
+```
+
+YOLOv8n and CLIP ViT-B/32 weights download automatically on first use. Provide
+the OpenAI key through an environment variable — it is never hardcoded or read
+from a file:
+
+```powershell
+$env:OPENAI_API_KEY = "sk-..."
+```
+
+### Perception tests
+
+The perception units inject fakes, so they need neither weights nor network:
+
+```powershell
+& ".\.venv312-rocm\Scripts\python.exe" -m unittest discover -s tests -p "test_perception.py" -v
+```
+
+### Run Architecture B
+
+Architecture B runs perception, ships the scene across the simulated channel to
+GPT-4o-mini, and executes the returned target with a scripted controller in A's
+MuJoCo environment (module `architecture_b.runner`):
+
+```powershell
+& ".\.venv312-rocm\Scripts\python.exe" -m architecture_b.runner `
+  --episodes 5 `
+  --seed 1010 `
+  --scene warehouse_normal `
+  --compression scene_graph `
+  --channel clean `
+  --planner gpt `
+  --clip
+```
+
+Flags:
+
+- `--compression {full_json,scene_graph,raw_image}` — how much of the scene
+  crosses the channel (the bandwidth benchmark). `raw_image` sends the
+  PNG-encoded frame; the JSON levels send the scene graph.
+- `--channel {clean,degraded}` — clean (oracle, effectively free) or degraded
+  (~1 Mbit/s, 300 ms latency, 20% loss). A dropped payload is recorded as a
+  `channel_drop` failure.
+- `--planner {gpt,heuristic}` — `gpt` calls GPT-4o-mini (needs
+  `OPENAI_API_KEY`); `heuristic` is a deterministic offline planner so B runs
+  with no key/network.
+- `--clip` — also compute a CLIP confidence per trial (logged; this is the
+  routing signal Architecture C gates on).
+- `--scene` — any Architecture A scenario (`warehouse_normal`, `pick_place`, …).
+
+Output: `outputs/architecture_b_demo/architecture_b-<timestamp>/metrics.json`
+with a summary (`success_rate`, `mean_latency_seconds`,
+`total_network_payload_bytes`, `escalation_rate`) and a per-episode `results`
+list carrying `success`, `latency_seconds`, `network_payload_bytes`,
+`clip_confidence`, `compression_level`, `channel_condition`, and
+`failure_reason`. These columns are a superset of Architecture A's per-episode
+record, so A/B/C merge into one comparison table (see the comparison section
+once it lands).
+
+Known limitations:
+
+- Without `OPENAI_API_KEY`, `--planner gpt` raises a clear error — use
+  `--planner heuristic` for offline runs. This is a real GPT-4o-mini call, not a
+  simulated contract.
+- End-to-end B needs Architecture A's environment (`mujoco` + `lerobot`). The
+  perception, channel, payload, and planner-parsing units are covered by
+  `test_perception.py`, `test_channel.py`, and `test_architecture_b.py`, which
+  run without that stack.
+
+### Run Architecture C
+
+Architecture C puts the CLIP-gated router in front of the same pieces:
+recognized, high-confidence instructions run locally on SmolVLA (zero network
+cost); the rest escalate over the channel to GPT-4o-mini (module
+`architecture_c.runner`):
+
+```powershell
+& ".\.venv312-rocm\Scripts\python.exe" -m architecture_c.runner `
+  --episodes 5 `
+  --seed 1010 `
+  --scene warehouse_normal `
+  --clip-threshold 0.6 `
+  --channel clean `
+  --planner gpt `
+  --checkpoint outputs\train\smolvla_pickplace_50\checkpoints\last\pretrained_model
+```
+
+Flags in addition to Architecture B's:
+
+- `--clip-threshold FLOAT` — CLIP confidence required to stay local (default
+  0.6); lower routes more work locally.
+- `--checkpoint PATH` — SmolVLA checkpoint for the local route (defaults to A's
+  selected baseline path).
+
+Output: `outputs/architecture_c_demo/architecture_c-<timestamp>/metrics.json`.
+Each per-episode record adds `route` (`local`/`escalated`), `escalated` (bool)
+and `clip_confidence`; local trials record `network_payload_bytes: 0`. The
+summary's `escalation_rate` is the headline result — how often the cloud was
+avoided without losing task success.
+
+Known limitations:
+
+- Without the SmolVLA checkpoint (or the `lerobot` stack), the local route is
+  unavailable and **every** trial escalates; the runner prints a notice and
+  records the reason in each row. This mirrors A's "escalate when local
+  capability is unavailable" behaviour — it is not a silent fallback.
+- Without `OPENAI_API_KEY`, add `--planner heuristic` so escalated trials still
+  resolve offline.
+- The routing gate (`architecture_c.router`) is covered by
+  `test_architecture_c.py` with no model weights.
+
+## Combined comparison (A / B / C)
+
+Every architecture writes an A-compatible `metrics.json`;
+`scripts/run_comparison.py` merges them into one table. Starting from nothing:
+
+1. Install the B/C extra into the Architecture A environment and set
+   `OPENAI_API_KEY` (see [B/C setup](#bc-setup)).
+2. Produce one run per architecture (any subset is fine):
+
+   ```powershell
+   # A — native evaluator (writes outputs/architecture_a_demo/smolvla-<ts>/)
+   powershell -ExecutionPolicy Bypass -File .\scripts\run_architecture_a_smolvla.ps1 `
+     -Episodes 5 -Seed 1010 -Device cpu
+
+   # B — networked
+   & ".\.venv312-rocm\Scripts\python.exe" -m architecture_b.runner `
+     --episodes 5 --seed 1010 --scene warehouse_normal --channel clean --planner gpt
+
+   # C — hybrid
+   & ".\.venv312-rocm\Scripts\python.exe" -m architecture_c.runner `
+     --episodes 5 --seed 1010 --scene warehouse_normal --channel clean --planner gpt
+   ```
+
+3. Merge the runs into one CSV (each flag takes a `metrics.json`, a run dir, or
+   a parent dir whose newest run is used; omit any architecture you did not run):
+
+   ```powershell
+   & ".\.venv312-rocm\Scripts\python.exe" .\scripts\run_comparison.py `
+     --a outputs\architecture_a_demo `
+     --b outputs\architecture_b_demo `
+     --c outputs\architecture_c_demo `
+     --output outputs\comparison
+   ```
+
+This writes:
+
+- `outputs/comparison/comparison.csv` — one row per episode across all
+  architectures. Columns: `architecture`, `episode_id`, `seed`, `instruction`,
+  `scene`, `success`, `steps`, `latency_seconds`, `network_payload_bytes`
+  (0 for A), `clip_confidence` (C), `escalated` (C), `route`,
+  `channel_condition`, `compression_level`, `failure_reason`.
+- `outputs/comparison/comparison_summary.csv` — per-architecture success rate,
+  mean latency, total payload bytes, and escalation rate (the headline metric).
+
+To benchmark the bandwidth/condition matrix, re-run B/C with different
+`--compression` (`full_json` / `scene_graph` / `raw_image`) and `--channel`
+(`clean` / `degraded`) values; each run is a separate `metrics.json` you can
+merge.
 
 ## Scope
 

@@ -23,6 +23,14 @@ lerobot = [
     "lerobot[dataset,smolvla]==0.6.0",
     "setuptools==80.10.2",
 ]
+# Architectures B and C: real YOLOv8n detection, CLIP grounding, and the
+# OpenAI planner. Additive to Architecture A's stack; install into the same
+# environment that has mujoco + lerobot.
+architectures_bc = [
+    "ultralytics>=8.3,<9",
+    "open-clip-torch>=2.24,<3",
+    "openai>=1.40,<2",
+]
 
 [project.scripts]
 run-architecture-a = "architecture_a.cli:main"
