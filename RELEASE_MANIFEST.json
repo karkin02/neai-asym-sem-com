@@ -1,13 +1,14 @@
 ﻿{
     "schema":  "fol_release_manifest/v1",
-    "created":  "2026-08-02T19:20:03.2500768+08:00",
-    "assets_embedded":  false,
+    "created":  "2026-08-02T19:30:28.2941227+08:00",
+    "embedded_assets":  {
+                            "yolo":  "outputs/train/warehouse_yolov8n_v9_single_wrist_damage_balanced/weights/best.pt",
+                            "clip":  "outputs/train/warehouse_clip_prototypes_v4_v3_medium.npz"
+                        },
     "external_assets":  {
                             "general_checkpoint":  "outputs/train/smolvla_pickplace_50/checkpoints/last/pretrained_model",
                             "warehouse_checkpoint":  "outputs/train/warehouse_v3_150/checkpoints/002000/pretrained_model",
-                            "yolo":  "outputs/train/warehouse_yolov8n_v9_single_wrist_damage_balanced/weights/best.pt",
-                            "vlm":  ".hf-cache/checkpoints/smolvlm2_500m_video_instruct",
-                            "clip":  "outputs/train/warehouse_clip_prototypes_v4_v3_medium.npz"
+                            "vlm":  ".hf-cache/checkpoints/smolvlm2_500m_video_instruct"
                         },
     "files":  [
                   {
@@ -44,6 +45,16 @@
                       "path":  "config/so101_calibration.example.json",
                       "sha256":  "3c0c97df280b37b71c5987e1a3612fd6268d2bbe2300df9df92f43997a2abee6",
                       "bytes":  591
+                  },
+                  {
+                      "path":  "outputs/train/warehouse_clip_prototypes_v4_v3_medium.npz",
+                      "sha256":  "899bf485c885f988533b33a7e79f627493a6f5ce68065f0ef922b029a3134b07",
+                      "bytes":  15772
+                  },
+                  {
+                      "path":  "outputs/train/warehouse_yolov8n_v9_single_wrist_damage_balanced/weights/best.pt",
+                      "sha256":  "94ea17c548aa6a38f1fa0145fa03e211b005451a033cab4766f2484b2cd54840",
+                      "bytes":  6203242
                   },
                   {
                       "path":  "scripts/benchmark_abc_gpu.ps1",
