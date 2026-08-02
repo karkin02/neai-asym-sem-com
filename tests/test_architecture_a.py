@@ -27,6 +27,29 @@ class FakeSmolVLABackend:
 
 
 class ArchitectureATest(unittest.TestCase):
+    def test_action_bounds_clip_small_overshoot_and_reject_large_overshoot(self) -> None:
+        from architecture_a.action_safety import bound_action_chunk
+
+        low = np.array((-1.8, -1.7, -2.0, -1.8, -2.8, 0.0))
+        high = np.array((1.8, 1.5, 1.8, 1.8, 2.8, 0.025))
+        tolerance = np.array((0.12, 0.02, 0.02, 0.02, 0.02, 0.0005))
+        near = np.zeros((2, 6))
+        near[0, 0] = 1.805
+        accepted = bound_action_chunk(
+            near, action_low=low, action_high=high, tolerance=tolerance
+        )
+        self.assertTrue(accepted.accepted)
+        self.assertEqual(accepted.values[0, 0], 1.8)
+        self.assertEqual(accepted.clipped_rows, 1)
+
+        far = near.copy()
+        far[0, 0] = 1.93
+        rejected = bound_action_chunk(
+            far, action_low=low, action_high=high, tolerance=tolerance
+        )
+        self.assertFalse(rejected.accepted)
+        self.assertEqual(rejected.violation["joint_index"], 0)
+
     def test_vla_confidence_detects_unstable_and_disagreeing_chunks(self) -> None:
         from architecture_a.vla_confidence import estimate_vla_confidence
 
@@ -355,7 +378,8 @@ class ArchitectureATest(unittest.TestCase):
             self.assertEqual(observation.metadata["problem"], "barcode_missing")
             self.assertEqual(graph["problem"], "barcode_missing")
             self.assertEqual(graph["objects"][0]["barcode"], "missing")
-            self.assertEqual(graph["zones"]["left_tray_blue"], "manual inspection")
+            self.assertEqual(graph["zones"]["inspection_tray"]["role"], "manual inspection")
+            self.assertEqual(graph["zones"]["inspection_tray"]["color"], "blue")
             self.assertNotIn("image", graph)
         finally:
             environment.close()
@@ -376,8 +400,8 @@ class ArchitectureATest(unittest.TestCase):
             self.assertEqual(graph["objects"][0]["barcode"], "present")
             self.assertEqual(graph["objects"][0]["condition"], "intact")
             self.assertEqual(
-                graph["zones"]["outbound_bin_green"],
-                "completed normal shipments",
+                graph["zones"]["outbound_bin"]["role"],
+                "completed shipments",
             )
         finally:
             environment.close()

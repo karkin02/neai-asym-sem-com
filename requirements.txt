@@ -1,3 +1,9 @@
 # CPU/development installation. For AMD or NVIDIA acceleration, install the
 # matching PyTorch wheels first with the vendor setup script.
--e .[lerobot]
+#
+# Extras:
+#   lerobot          - Architecture A: MuJoCo + LeRobot v3 + SmolVLA training/inference.
+#   architectures_bc - Architectures B and C: YOLOv8n (ultralytics), CLIP
+#                      (open-clip-torch), and the OpenAI SDK for the GPT-4o-mini
+#                      planner. Set OPENAI_API_KEY in the environment (never hardcode).
+-e .[lerobot,architectures_bc]

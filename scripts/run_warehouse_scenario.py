@@ -34,6 +34,12 @@ def main() -> None:
         default="barcode_missing",
     )
     parser.add_argument("--seed", type=int, default=1010)
+    parser.add_argument(
+        "--warehouse-layout",
+        choices=("v1", "v2", "v3"),
+        default="v3",
+        help="Versioned warehouse geometry; v3 is the promoted production layout.",
+    )
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--output-dir", type=Path)
     parser.add_argument("--vla-confidence", type=float, default=0.90)
@@ -61,6 +67,7 @@ def main() -> None:
         observation_images=False,
         kinematic_control=True,
         scenario=args.scenario,
+        warehouse_layout=args.warehouse_layout,
     )
     try:
         observation = environment.reset(
@@ -263,7 +270,7 @@ def main() -> None:
                         "mock_llm_review": {
                             "decision": "reroute",
                             "reason": "damaged_goods_policy",
-                            "destination": "right_tray_yellow",
+                            "destination": "rejection_tray",
                         },
                         "local_validator": {"approved": True},
                     }
@@ -277,12 +284,15 @@ def main() -> None:
             "damaged_vla_violation",
         ):
             destination_name = "conveyor"
+            destination_role = "conveyor"
             destination = environment.CONVEYOR_POSITION.copy()
         elif args.scenario == "package_damaged":
             destination_name = "right_tray"
+            destination_role = "rejection_tray"
             destination = np.asarray(environment.WAREHOUSE_TARGET_POSITIONS[destination_name])
         else:
             destination_name = "left_tray"
+            destination_role = "inspection_tray"
             destination = np.asarray(environment.WAREHOUSE_TARGET_POSITIONS[destination_name])
         waypoints = (
             (sample + (0.0, 0.0, 0.14), 0.020),
@@ -326,7 +336,8 @@ def main() -> None:
         else:
             routed = bool(np.linalg.norm(final_position[:2] - destination[:2]) < 0.09)
         result: dict[str, object] = {
-                    "destination": destination_name,
+                    "destination": destination_role,
+                    "physical_target": destination_name,
                     "final_package_position": [
                         round(float(value), 4) for value in final_position
                     ],

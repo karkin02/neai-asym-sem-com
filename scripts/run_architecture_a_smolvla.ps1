@@ -8,7 +8,7 @@ param(
     [double]$MaxJointDelta = 0.0,
     [double]$MaxGripperDelta = 0.0,
     [string]$Environment = ".venv312-rocm",
-    [ValidateSet("pick_place", "warehouse_normal", "unexpected_obstacle")]
+    [ValidateSet("pick_place", "warehouse_normal", "barcode_missing", "package_damaged", "unexpected_obstacle")]
     [string]$Scene = "warehouse_normal",
     [switch]$Gui,
     [switch]$GuiReplay
@@ -40,13 +40,19 @@ if ($ActionSmoothing -le 0.0 -or $ActionSmoothing -gt 1.0) {
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 $checkpointRelative = $manifest.checkpoint
 $checkpointRole = "baseline"
+$warehouseLayout = if ($null -ne $manifest.warehouse_layout) { $manifest.warehouse_layout } else { "v1" }
+$yoloWeightsRelative = if ($null -ne $manifest.warehouse_yolo_weights) {
+    $manifest.warehouse_yolo_weights
+} else {
+    "outputs/train/warehouse_yolov8n_v3_inspection/weights/best.pt"
+}
 if (
-    $Scene -eq "warehouse_normal" -and
+    $Scene -ne "pick_place" -and
     $null -ne $manifest.scenario_checkpoints -and
-    $null -ne $manifest.scenario_checkpoints.warehouse_normal
+    $null -ne $manifest.scenario_checkpoints.$Scene
 ) {
-    $checkpointRelative = $manifest.scenario_checkpoints.warehouse_normal.checkpoint
-    $checkpointRole = $manifest.scenario_checkpoints.warehouse_normal.status
+    $checkpointRelative = $manifest.scenario_checkpoints.$Scene.checkpoint
+    $checkpointRole = $manifest.scenario_checkpoints.$Scene.status
 }
 $checkpoint = Join-Path $projectRoot $checkpointRelative
 if (-not (Test-Path -LiteralPath $checkpoint)) {
@@ -54,6 +60,10 @@ if (-not (Test-Path -LiteralPath $checkpoint)) {
 }
 Write-Output "Checkpoint role: $checkpointRole"
 Write-Output "Checkpoint path: $checkpoint"
+$yoloWeights = Join-Path $projectRoot $yoloWeightsRelative
+if ($Scene -ne "pick_place" -and -not (Test-Path -LiteralPath $yoloWeights)) {
+    throw "Selected warehouse detector not found at $yoloWeights"
+}
 
 if ($Device -eq "cuda") {
     $gpuCheck = @'
@@ -87,6 +97,8 @@ try {
         --seed $Seed `
         --device $Device `
         --scene $Scene `
+        --warehouse-layout $warehouseLayout `
+        --yolo-weights $yoloWeights `
         --replan-every $ReplanEvery `
         --action-smoothing $ActionSmoothing `
         --max-joint-delta $MaxJointDelta `

@@ -1,4 +1,21 @@
-# Architecture A: Co-Located Edge VLA
+# Networked vs. Co-located Embodied Intelligence (Architectures A / B / C)
+
+This repository benchmarks three control architectures for the same simulated
+SO-101 pick-and-place task, under identical perception input and task
+conditions:
+
+- **Architecture A — co-located edge VLA** (local SmolVLA, no network). Built and
+  tested; documented first and in most depth below.
+- **Architecture B — fully networked** (compressed scene → simulated channel →
+  GPT-4o-mini → scripted controller).
+- **Architecture C — hybrid/adaptive** (CLIP-confidence gate: local SmolVLA when
+  confident/recognized, else escalate over the B path).
+
+B and C are built on top of A and reuse its MuJoCo environment for execution —
+see [Architectures B and C](#architectures-b-and-c) and
+[Combined comparison](#combined-comparison-a--b--c).
+
+## Architecture A: Co-Located Edge VLA
 
 Architecture A runs an embodied vision-language-action policy locally:
 
@@ -170,18 +187,29 @@ Mode:       open-loop 50-action chunk
 Later fine-tuning runs were rejected because they scored below this checkpoint
 on the fixed held-out benchmark.
 
-The run wrapper also supports a narrowly scoped warehouse specialist recorded
-under `scenario_checkpoints` in the same manifest:
+The run wrapper also supports the promoted v3 visual multi-destination
+warehouse specialist recorded under `scenario_checkpoints` in the same
+manifest:
 
 ```text
 pick_place          -> selected baseline (12/20 original benchmark)
-warehouse_normal    -> warehouse specialist (11/20 versus baseline 8/20)
-unexpected_obstacle -> selected baseline plus pre-execution collision gate
+warehouse_normal    -> v3 step-2000 specialist (20/20 conveyor)
+barcode_missing     -> v3 step-2000 specialist (18/20 inspection tray)
+package_damaged     -> v3 step-2000 specialist (18/20 rejection tray)
+unexpected_obstacle -> pre-execution collision gate and STOP/escalation
 ```
 
-This routing keeps the warehouse gain isolated from the specialist's regression
-on general pick-and-place. The wrapper prints the checkpoint role and resolved
-path before model loading.
+The warehouse checkpoint is
+`outputs/train/warehouse_v3_150/checkpoints/002000/pretrained_model`. It runs
+on warehouse layout v3 with the medium-zoom top-down overhead camera and
+`outputs/train/warehouse_yolov8n_v9_single_wrist_damage_balanced/weights/best.pt`. Across the
+fixed 60-episode warehouse benchmark it scored 56/60 physical successes
+(93.3%) and 60/60 correct visual destinations. The versioned six-scenario
+safety and handoff matrix also passed 6/6 on layout v3. These are controlled
+MuJoCo results, not a claim of perfect real-world accuracy. General
+pick-and-place continues to use the separate 12/20 baseline. The previous v1
+35/60 and v2b 55/60 benchmarks remain recorded in the manifest for rollback
+and comparison.
 
 ## Environment
 
@@ -293,8 +321,10 @@ package to the yellow rejection zone:
 ```
 
 The simulated damage cue is placed on the package front and side, so an overhead
-view can miss it. The `condition: damaged` field is injected scenario metadata;
-this project does not claim a trained visual damage detector.
+view can miss it. Architecture A therefore captures a close oblique damage view
+and a wrist-camera barcode view. YOLO v3 selects conveyor, blue inspection tray,
+or yellow rejection tray from those images only; scenario metadata is retained
+for benchmark scoring but is not an input to A's destination decision.
 
 Use `--scenario unexpected_obstacle` to place a visible orange safety barrier
 in the arm's path. The demo prints a mock VLA proposal to
@@ -352,10 +382,9 @@ records how many policy commands exceeded the simulated robot's action range.
 
 The Architecture A PowerShell demo defaults to `-Scene warehouse_normal`, which
 renders the package, barcode, blue inspection tray, yellow rejection tray,
-conveyor, and green outbound bin around the real SmolVLA execution. This complete
-warehouse layout is out of distribution for the selected checkpoint, which was
-trained on the simpler red-sample two-tray scene; use `-Scene pick_place` when
-measuring checkpoint accuracy rather than demonstrating the integrated layout.
+conveyor, and green outbound bin around the real SmolVLA execution. Warehouse
+scenes use the step-3000 multi-destination specialist; `pick_place` continues to
+use the selected general baseline.
 
 Failed or low-consistency SmolVLA episodes export an Architecture A-to-B handoff
 as `escalation_XXXX.json` plus one `escalation_XXXX.png` evidence frame. The JSON
@@ -364,13 +393,19 @@ signals. YOLO, CLIP, scene-graph construction, and LLM reasoning are marked
 `pending` because Architecture B owns those stages.
 
 Each real SmolVLA action chunk is validated before entering the execution queue.
-Architecture A stops on non-finite actions, joint-bound violations, VLA action
-consistency below the configured threshold, or a forward-kinematic MuJoCo contact
-between the arm and the physical obstacle. Use `-Scene unexpected_obstacle` to
-exercise the pre-execution collision handoff.
+Architecture A stops on non-finite actions, material joint-bound violations,
+VLA action consistency below the configured threshold, or a forward MuJoCo
+collision. Small model overshoots are clipped to the exact physical actuator
+limits before collision simulation: shoulder pan allows up to 0.12 rad because
+the expert inspection trajectory intentionally saturates that joint; other arm
+joints allow 0.02 rad and the gripper 0.0005 m. Larger violations always STOP and
+escalate. Metrics record clipping counts, maximum overshoot, and the worst
+rejected joint/value. Use `-Scene unexpected_obstacle` to exercise the
+pre-execution collision handoff.
 
 Run the complete normal, exception, protected-obstacle, and unsafe-bypass matrix
-with `python scripts/validate_warehouse_integration.py`. It writes a versioned
+with `python scripts/validate_warehouse_integration.py --warehouse-layout v3`.
+It records the exercised layout, writes a versioned
 `validation_report.json` and exits nonzero if any expected physical or safety
 outcome differs. A-to-B requests are also atomically published under each
 evaluation run's `handoff` directory using `architecture_a_to_b/v1`. B replies
@@ -450,6 +485,337 @@ reduced held-out success.
 The test suite covers the architecture runner, mock policy behavior, PyBullet
 rendering, SO-101 MuJoCo control, inverse kinematics, demonstration alignment,
 and the SmolVLA adapter boundary.
+
+## Architectures B and C
+
+Warehouse destinations use semantic roles across A/B/C: `inspection_tray`,
+`rejection_tray`, `conveyor`, and `outbound_bin`. Colors and left/right positions
+are perception attributes only. The local compatibility layer maps
+`inspection_tray -> left_tray` and `rejection_tray -> right_tray` for MuJoCo and
+accepts the legacy physical names at existing v1 handoff boundaries.
+
+Architecture A (above) is the co-located baseline: instruction + cameras + state
+go straight to a local SmolVLA policy. Architectures B and C are built **on top
+of A** and reuse its MuJoCo environment for execution — they change only *where
+the action decision comes from*, never how the robot is physically stepped.
+
+- **Architecture B — fully networked.** The scene representation is compressed,
+  sent across a simulated network channel to an OpenAI GPT-4o-mini planner, and
+  the returned target is executed by a scripted controller through A's env.
+- **Architecture C — hybrid/adaptive.** A routing gate checks CLIP confidence
+  first: high-confidence, recognized instructions run locally on SmolVLA at zero
+  network cost; everything else escalates over the same channel + GPT-4o-mini
+  path as B.
+
+Both share one **real** perception pipeline (unlike the warehouse demo's
+`simulated_yolo_contract` / `simulated_clip_contract` values, these run actual
+models):
+
+- **YOLOv8n detection** — `shared.perception.YoloDetector.detect(frame)` returns
+  `Detection(label, confidence, bbox)` records.
+- **Scene graph** — `shared.perception.build_scene_graph(detections, w, h, zones=…)`
+  turns detections into JSON objects plus spatial relations (`left_of` / `above`
+  / `near`, and object-`in`/`near`-zone), shaped like
+  `SO101MuJoCoEnvironment.scene_graph()` so it fits the existing handoff payloads.
+- **CLIP grounding** — `shared.perception.ClipGrounder.score(expression, crops)`
+  returns a per-object similarity and a single confidence in `[0, 1]`. That
+  confidence is the shared routing/uncertainty signal Architecture C gates on.
+
+Each component is a standalone, injectable unit (heavy models load lazily), so
+the perception tests run with no model weights or network.
+
+### B/C setup
+
+These dependencies are additive to Architecture A's stack and install into the
+**same** environment that has `mujoco` and `lerobot`. They are declared as the
+`architectures_bc` optional extra (`ultralytics`, `open-clip-torch`, `openai`):
+
+```powershell
+& ".\.venv312-rocm\Scripts\python.exe" -m pip install -e ".[architectures_bc]"
+```
+
+YOLOv8n and CLIP ViT-B/32 weights download automatically on first use. Provide
+the OpenAI key through an environment variable — it is never hardcoded or read
+from a file:
+
+```powershell
+$env:OPENAI_API_KEY = "sk-..."
+```
+
+### Perception tests
+
+The perception units inject fakes, so they need neither weights nor network:
+
+```powershell
+& ".\.venv312-rocm\Scripts\python.exe" -m unittest discover -s tests -p "test_perception.py" -v
+```
+
+Generate the synthetic warehouse dataset and train the detector before running
+B/C. MuJoCo segmentation provides the bounding boxes automatically, so model
+weights and generated images remain reproducible outputs rather than Git assets:
+
+```powershell
+& ".\.venv312-rocm\Scripts\python.exe" .\scripts\generate_yolo_warehouse_dataset.py
+& ".\.venv312-rocm\Scripts\python.exe" .\scripts\train_warehouse_yolo.py --device cpu
+```
+
+The default B/C detector is
+`outputs/train/warehouse_yolov8n_v9_single_wrist_damage_balanced/weights/best.pt`. It was
+fine-tuned on layout-v3 overhead frames plus two arm poses captured through the
+original policy `wrist` camera, then damage-balanced without changing the
+held-out validation set. Its held-out recall is 85.0% for barcode and 68.1%
+for the damage mark. Operational
+calibration scored barcode-present 20/20, barcode-missing false positives 0/20,
+damage-present 20/20, and damage false positives 0/60 including obstacle
+scenes. Damage evidence fuses YOLO package grounding with a conservative
+narrow saturated-red stripe verifier on the package crop; it remains visual
+only and rejects the much wider obstacle stripe. Override it
+with `--yolo-weights PATH`; use `--device cpu` on unsupported ROCm GPUs. The
+default runtime confidence threshold is `0.05`, calibrated to retain small
+condition marks. Layout v1 and YOLO v3 remain available only as explicit
+rollback choices.
+
+Architecture C also uses a compact warehouse calibration on top of frozen CLIP
+embeddings. Build it once after dataset generation:
+
+```powershell
+& ".\.venv312-rocm\Scripts\python.exe" .\scripts\train_warehouse_clip_prototypes.py --device cpu
+```
+
+The default file is
+`outputs/train/warehouse_clip_prototypes_v4_v3_medium.npz`. It is built from
+the promoted v3 medium-camera distribution; older prototype files remain
+available for rollback. YOLO first
+nominates crops matching the instructed object class; calibrated CLIP then
+verifies the nominated crop against the target prototype and all alternative
+warehouse prototypes. Missing targets or a weak/negative class margin escalate.
+The experimental single-wrist v5 prototype was not promoted: on the same v9
+held-out set it matched v4 package recall (98.78%) but increased non-package
+false acceptance from 3.03% to 3.85%. Mixing condition-view crops into C's
+overhead package prototype therefore weakened separation.
+
+### Run Architecture B
+
+Architecture B runs perception, ships the scene across the simulated channel to
+GPT-4o-mini, and sends the returned semantic destination to Architecture A's
+local SmolVLA and safety executor (module `architecture_b.runner`). The cloud
+never supplies joint commands. Unless `--instruction` is explicit, B sends the
+neutral goal `Inspect and sort the detected package using visual evidence.`;
+the scenario answer is not included. GPT must infer `CONTINUE`, `REROUTE`, or
+`STOP` from detected barcode, damage-mark, and obstacle evidence. Architecture A
+then creates the color-specific SmolVLA motion instruction locally:
+
+```powershell
+& ".\.venv312-rocm\Scripts\python.exe" -m architecture_b.runner `
+  --episodes 5 `
+  --seed 1010 `
+  --scene warehouse_normal `
+  --warehouse-layout v3 `
+  --compression scene_graph `
+  --channel clean `
+  --planner gpt `
+  --executor architecture_a `
+  --device cuda `
+  --clip
+```
+
+Flags:
+
+- `--continuous` keeps YOLO, SmolVLA/SmolVLM, and the OpenAI client loaded and
+  processes episodes until `Ctrl+C`. Its timestamped `metrics.json` is updated
+  after every completed episode, so normal interruption preserves results;
+  `--episodes` is ignored in this mode.
+
+- `--compression {full_json,scene_graph,raw_image}` — how much of the scene
+  crosses the channel (the bandwidth benchmark). `raw_image` sends the
+  PNG-encoded frame; the JSON levels send the scene graph.
+- `--channel {clean,degraded}` — clean (oracle, effectively free) or degraded
+  (~1 Mbit/s, 300 ms latency, 20% loss). A dropped payload is recorded as a
+  `channel_drop` failure.
+- `--planner {gpt,heuristic}` — `gpt` calls GPT-4o-mini (needs
+  `OPENAI_API_KEY`); `heuristic` is a deterministic offline planner so B runs
+  with no key/network. Both return a semantic command, destination, confidence,
+  evidence list, and reasoning. GPT output is capped at 150 completion tokens;
+  confidence below 0.5, `STOP`, or a missing destination causes a zero-joint
+  local safe stop.
+- `--executor architecture_a` is the production path: A generates, bounds,
+  forward-previews, executes, and validates SmolVLA action chunks locally.
+  `--executor scripted` retains the deterministic pick/carry/release controller
+  only as a benchmark baseline.
+- `--clip` — also compute a CLIP confidence per trial (logged; this is the
+  routing signal Architecture C gates on).
+- `--scene` — any Architecture A scenario (`warehouse_normal`, `pick_place`, …).
+
+Output: `outputs/architecture_b_demo/architecture_b-<timestamp>/metrics.json`
+with a summary (`success_rate`, `mean_latency_seconds`,
+`total_network_payload_bytes`, `escalation_rate`) and a per-episode `results`
+list carrying `success`, `latency_seconds`, `network_payload_bytes`,
+`clip_confidence`, `compression_level`, `channel_condition`, and
+`failure_reason`. These columns are a superset of Architecture A's per-episode
+record, so A/B/C merge into one comparison table (see the comparison section
+once it lands).
+
+Known limitations:
+
+- Without `OPENAI_API_KEY`, `--planner gpt` raises a clear error — use
+  `--planner heuristic` for offline runs. This is a real GPT-4o-mini call, not a
+  simulated contract.
+- End-to-end B needs Architecture A's environment (`mujoco` + `lerobot`). The
+  perception, channel, payload, and planner-parsing units are covered by
+  `test_perception.py`, `test_channel.py`, and `test_architecture_b.py`, which
+  run without that stack.
+
+### Run Architecture B as a persistent mixed-task service
+
+The service keeps YOLO, SmolVLA/SmolVLM, and the GPT client alive while each
+file task may select a different warehouse scene and seed:
+
+```powershell
+& ".\.venv312-rocm\Scripts\python.exe" -m architecture_b.service `
+  --inbox runtime\architecture_b_tasks `
+  --planner gpt `
+  --device cuda
+```
+
+Submit `runtime/architecture_b_tasks/task_<id>.json` atomically with this shape:
+
+```json
+{"request_id":"job-001","scene":"warehouse_normal","seed":40000}
+```
+
+Allowed scenes are `warehouse_normal`, `barcode_missing`, `package_damaged`,
+and `unexpected_obstacle`. The request ID must match the filename. The service
+preserves task files, writes `response_<id>.json` atomically, checkpoints
+cumulative metrics after every completed task, rejects incompatible checkpoint
+changes, and continues after a malformed task. Press `Ctrl+C` for a graceful
+shutdown. Use `--once` to process the current inbox and exit.
+
+### Run Architecture C
+
+Architecture C puts the CLIP-gated router in front of the same pieces:
+recognized, high-confidence instructions run locally on SmolVLA (zero network
+cost); the rest escalate over the channel to GPT-4o-mini (module
+`architecture_c.runner`):
+
+```powershell
+& ".\.venv312-rocm\Scripts\python.exe" -m architecture_c.runner `
+  --episodes 5 `
+  --seed 1010 `
+  --scene warehouse_normal `
+  --warehouse-layout v3 `
+  --clip-threshold 0.6 `
+  --channel clean `
+  --planner gpt `
+  --device cuda
+```
+
+Flags in addition to Architecture B's:
+
+- `--clip-threshold FLOAT` — CLIP confidence required to stay local (default
+  0.6); lower routes more work locally.
+- `--checkpoint PATH` — SmolVLA checkpoint for the local route (defaults to A's
+  selected baseline path).
+- `--clip-margin-threshold FLOAT` sets the minimum package-prototype advantage
+  over alternative warehouse classes (default `-0.02372`). Matched v3
+  medium-camera calibration used 245 positive and 727 negative crops and
+  achieved 99.6% package recall at 4.54% non-package false acceptance.
+  Physical preview remains mandatory.
+- `--vlm MODEL_OR_PATH` — SmolVLM base model. When omitted, B first uses the bundled
+  `.hf-cache/checkpoints/smolvlm2_500m_video_instruct`; if it is absent, B falls
+  back to the Hugging Face model ID `HuggingFaceTB/SmolVLM2-500M-Video-Instruct`
+  into its normal cache. For offline use, pass an absolute local model directory.
+
+`--device` selects the device for SmolVLA, YOLO, and CLIP. ROCm-enabled PyTorch
+uses the standard `cuda` name for an AMD GPU. If `--checkpoint` is omitted, C uses A's
+scenario-selected checkpoint from `config/architecture_a_model.json`.
+
+Output: `outputs/architecture_c_demo/architecture_c-<timestamp>/metrics.json`.
+Each per-episode record adds `route` (`local`/`escalated`), `escalated` (bool)
+and `clip_confidence`; local trials record `network_payload_bytes: 0`. The
+summary's `escalation_rate` is the headline result — how often the cloud was
+avoided without losing task success.
+
+The promoted v3 visual-routing GPU matrix scored 60/60 successful warm
+episodes across normal, missing-barcode, and damaged-package tasks. It used
+one validated recovery escalation (1/60, 1,959 bytes); the other 59 episodes
+stayed local with zero payload. This does not disable escalation. Unexpected
+obstacles, unknown instructions, forced low confidence, invalid action chunks,
+and failed forward outcome previews still take the recovery path. A reported
+obstacle enters a stationary safety hold for three fresh perception cycles;
+unless a future certified adapter positively verifies a clear path, the local
+safety layer issues `STOP` with zero joint commands. The staged-stop check
+passed 3/3 obstacle episodes.
+
+Known limitations:
+
+- Without the SmolVLA checkpoint (or the `lerobot` stack), the local route is
+  unavailable and **every** trial escalates; the runner prints a notice and
+  records the reason in each row. This mirrors A's "escalate when local
+  capability is unavailable" behaviour — it is not a silent fallback.
+- Without `OPENAI_API_KEY`, add `--planner heuristic` so escalated trials still
+  resolve offline.
+- The routing gate (`architecture_c.router`) is covered by
+  `test_architecture_c.py` with no model weights.
+
+## Combined comparison (A / B / C)
+
+Every architecture writes an A-compatible `metrics.json`;
+`scripts/run_comparison.py` merges them into one table. Starting from nothing:
+
+1. Install the B/C extra into the Architecture A environment and set
+   `OPENAI_API_KEY` (see [B/C setup](#bc-setup)).
+2. Produce one run per architecture (any subset is fine):
+
+   ```powershell
+   # A — native evaluator (writes outputs/architecture_a_demo/smolvla-<ts>/)
+   powershell -ExecutionPolicy Bypass -File .\scripts\run_architecture_a_smolvla.ps1 `
+     -Episodes 5 -Seed 1010 -Device cpu
+
+   # B — networked
+   & ".\.venv312-rocm\Scripts\python.exe" -m architecture_b.runner `
+     --episodes 5 --seed 1010 --scene warehouse_normal --channel clean --planner gpt
+
+   # C — hybrid
+   & ".\.venv312-rocm\Scripts\python.exe" -m architecture_c.runner `
+     --episodes 5 --seed 1010 --scene warehouse_normal --channel clean --planner gpt
+   ```
+
+3. Merge the runs into one CSV (each flag takes a `metrics.json`, a run dir, or
+   a parent dir whose newest run is used; omit any architecture you did not run):
+
+   ```powershell
+   & ".\.venv312-rocm\Scripts\python.exe" .\scripts\run_comparison.py `
+     --a outputs\architecture_a_demo `
+     --b outputs\architecture_b_demo `
+     --c outputs\architecture_c_demo `
+     --output outputs\comparison
+   ```
+
+This writes:
+
+- `outputs/comparison/comparison.csv` — one row per episode across all
+  architectures. Columns: `architecture`, `episode_id`, `seed`, `instruction`,
+  `scene`, `success`, `steps`, `latency_seconds`, `network_payload_bytes`
+  (0 for A), `clip_confidence` (C), `escalated` (C), `route`,
+  `channel_condition`, `compression_level`, `failure_reason`.
+- `outputs/comparison/comparison_summary.csv` — per-architecture success rate,
+  mean latency, total payload bytes, and escalation rate (the headline metric).
+
+All three runners use the same episode-latency boundary: environment reset and
+visual perception through the validated execution result. Model construction is
+outside the timer. Use the second and later episodes of a persistent process for
+warm latency so lazy model initialization is also excluded.
+
+The standardized 20-episode warm GPU benchmark scored 20/20 for every
+architecture: A mean 1.038 s (p95 1.078 s), B mean 1.004 s (p95 1.052 s), and
+C mean 1.000 s (p95 1.051 s). B transmitted 36,835 bytes across its 20 warm
+episodes; A and C transmitted zero. Differences of a few milliseconds are not
+treated as a meaningful ordering.
+
+To benchmark the bandwidth/condition matrix, re-run B/C with different
+`--compression` (`full_json` / `scene_graph` / `raw_image`) and `--channel`
+(`clean` / `degraded`) values; each run is a separate `metrics.json` you can
+merge.
 
 ## Scope
 
