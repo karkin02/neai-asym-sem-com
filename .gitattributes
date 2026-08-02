@@ -1,3 +1,21 @@
-*.safetensors filter=lfs diff=lfs merge=lfs -text
-*.pt filter=lfs diff=lfs merge=lfs -text
-*.npz filter=lfs diff=lfs merge=lfs -text
+# Keep repository text deterministic across Windows and Linux.
+* text=auto
+
+*.md text eol=lf
+*.py text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.txt text eol=lf
+*.ps1 text eol=crlf
+
+# Never perform line-ending conversion on generated/model assets.
+*.gif binary
+*.jpg binary
+*.jpeg binary
+*.npz binary
+*.png binary
+*.pt binary
+*.safetensors binary
+*.zip binary
