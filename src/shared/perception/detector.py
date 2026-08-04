@@ -50,6 +50,61 @@ class Detection:
         }
 
 
+def detect_package_damage_mark(
+    frame: np.ndarray,
+    detections: Sequence[Detection],
+    *,
+    package_confidence: float = 0.50,
+) -> Optional[Detection]:
+    """Verify a narrow saturated-red damage stripe in a YOLO package crop."""
+    packages = [
+        item
+        for item in detections
+        if item.label == "package" and item.confidence >= package_confidence
+    ]
+    if not packages:
+        return None
+    package = max(packages, key=lambda item: item.confidence)
+    height, width = frame.shape[:2]
+    x1, y1, x2, y2 = (int(value) for value in package.bbox)
+    pad = 3
+    x1, y1 = max(0, x1 - pad), max(0, y1 - pad)
+    x2, y2 = min(width, x2 + pad), min(height, y2 + pad)
+    crop = np.asarray(frame[y1:y2, x1:x2])
+    if crop.size == 0:
+        return None
+    red = crop[:, :, 0].astype(np.int16)
+    green = crop[:, :, 1].astype(np.int16)
+    blue = crop[:, :, 2].astype(np.int16)
+    mask = (
+        (red >= 140)
+        & (green <= 55)
+        & (blue <= 55)
+        & (red >= green + 90)
+        & (red >= blue + 90)
+    )
+    ys, xs = np.where(mask)
+    if len(xs) < 30:
+        return None
+    component_width = int(xs.max() - xs.min() + 1)
+    component_height = int(ys.max() - ys.min() + 1)
+    if component_width > 12 or component_height < 20:
+        return None
+    if component_height / max(component_width, 1) < 2.5:
+        return None
+    confidence = min(0.99, 0.45 + (len(xs) - 30) / 200.0)
+    return Detection(
+        label="damage_mark",
+        confidence=float(confidence),
+        bbox=(
+            float(x1 + xs.min()),
+            float(y1 + ys.min()),
+            float(x1 + xs.max() + 1),
+            float(y1 + ys.max() + 1),
+        ),
+    )
+
+
 def parse_yolo_result(result: Any, conf_threshold: float) -> List[Detection]:
     """Convert one Ultralytics result object into :class:`Detection` records.
 
@@ -94,10 +149,12 @@ class YoloDetector:
         self,
         model_path: str = "yolov8n.pt",
         conf_threshold: float = 0.25,
+        device: Optional[str] = None,
         model: Optional[Any] = None,
     ) -> None:
         self.model_path = model_path
         self.conf_threshold = conf_threshold
+        self.device = device
         self._model = model
 
     def _ensure_model(self) -> Any:
@@ -117,7 +174,15 @@ class YoloDetector:
             A list of :class:`Detection` above the confidence threshold.
         """
         model = self._ensure_model()
-        result = model(frame, verbose=False)[0]
+        if self.device is not None and hasattr(model, "predict"):
+            result = model.predict(
+                source=frame,
+                verbose=False,
+                device=self.device,
+                conf=self.conf_threshold,
+            )[0]
+        else:
+            result = model(frame, verbose=False)[0]
         return parse_yolo_result(result, self.conf_threshold)
 
 

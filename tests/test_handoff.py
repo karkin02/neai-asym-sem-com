@@ -41,6 +41,22 @@ class HandoffContractTest(unittest.TestCase):
             request,
         )
         self.assertEqual(recovery.command, RecoveryCommand.REROUTE)
+        self.assertEqual(recovery.destination, "inspection_tray")
+
+    def test_semantic_rejection_destination_is_approved(self) -> None:
+        request = request_for("package_damaged")
+        recovery = validate_recovery_response(
+            {
+                "schema": "architecture_b_to_a/v1",
+                "request_id": request["request_id"],
+                "command": "REROUTE",
+                "destination": "rejection_tray",
+                "reason": "damage confirmed",
+                "confidence": 0.95,
+            },
+            request,
+        )
+        self.assertEqual(recovery.destination, "rejection_tray")
 
     def test_obstacle_cannot_be_overridden_with_continue(self) -> None:
         request = request_for("unexpected_obstacle")

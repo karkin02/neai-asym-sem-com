@@ -34,6 +34,7 @@ class GroundingResult:
     probabilities: List[float]
     best_index: int
     confidence: float
+    margin: float
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -41,6 +42,7 @@ class GroundingResult:
             "probabilities": [round(float(p), 4) for p in self.probabilities],
             "best_index": self.best_index,
             "confidence": round(float(self.confidence), 4),
+            "margin": round(float(self.margin), 4),
         }
 
 
@@ -106,7 +108,7 @@ class ClipGrounder:
             A :class:`GroundingResult`. With no crops, confidence is ``0.0``.
         """
         if len(crops) == 0:
-            return GroundingResult(scores=[], probabilities=[], best_index=-1, confidence=0.0)
+            return GroundingResult(scores=[], probabilities=[], best_index=-1, confidence=0.0, margin=0.0)
 
         embedder = self._ensure_embedder()
         image_features = np.asarray(embedder.embed_images(crops), dtype=np.float64)
@@ -118,12 +120,17 @@ class ClipGrounder:
         scores = image_features @ text_feature  # cosine similarity, shape (N,)
         probabilities = _softmax(scores, self.temperature)
         best_index = int(np.argmax(scores))
-        confidence = float(np.max(probabilities))
+        ranked = np.sort(scores)[::-1]
+        # Keep softmax for ranking only. Routing confidence must not decrease
+        # merely because the detector returned more candidate crops.
+        confidence = float(np.clip((ranked[0] + 1.0) / 2.0, 0.0, 1.0))
+        margin = float(ranked[0] - ranked[1]) if len(ranked) > 1 else 1.0
         return GroundingResult(
             scores=[float(s) for s in scores],
             probabilities=[float(p) for p in probabilities],
             best_index=best_index,
             confidence=confidence,
+            margin=margin,
         )
 
 

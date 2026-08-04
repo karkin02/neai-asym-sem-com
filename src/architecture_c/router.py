@@ -29,6 +29,9 @@ class RoutingConfig:
     """
 
     clip_threshold: float = 0.60
+    # Matched v3 medium-camera calibration: 99.6% package recall at 4.54%
+    # non-package false acceptance on 245 positive and 727 negative crops.
+    clip_margin_threshold: float = -0.023721705733121712
     known_verbs: tuple[str, ...] = ("pick", "place", "put", "move", "grasp", "drop", "route")
     known_objects: tuple[str, ...] = ("sample", "package", "cube", "block", "box", "cup", "bottle")
 
@@ -72,11 +75,14 @@ def decide_route(
     clip_confidence: float,
     detected_labels: Sequence[str],
     config: RoutingConfig = RoutingConfig(),
+    clip_margin: float | None = None,
+    perception_valid: bool = True,
 ) -> RouteDecision:
     """Decide local vs escalate for one instruction."""
     recognized = is_recognized(instruction, detected_labels, config)
     clip_ok = clip_confidence >= config.clip_threshold
-    if clip_ok and recognized:
+    margin_ok = clip_margin is None or clip_margin >= config.clip_margin_threshold
+    if clip_ok and margin_ok and recognized and perception_valid:
         return RouteDecision(
             route="local",
             escalated=False,
@@ -88,8 +94,12 @@ def decide_route(
     reasons = []
     if not clip_ok:
         reasons.append(f"clip {clip_confidence:.2f} < {config.clip_threshold}")
+    if not margin_ok:
+        reasons.append(f"clip margin {clip_margin:.3f} < {config.clip_margin_threshold}")
     if not recognized:
         reasons.append("instruction not recognized")
+    if not perception_valid:
+        reasons.append("no YOLO detections")
     return RouteDecision(
         route="escalate",
         escalated=True,

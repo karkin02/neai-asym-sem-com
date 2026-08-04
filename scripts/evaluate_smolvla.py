@@ -13,6 +13,13 @@ import truststore
 from PIL import Image
 
 from architecture_a.contracts import Action
+from architecture_a.action_safety import (
+    SO101_ACTION_BOUND_TOLERANCE,
+    SO101_ACTION_HIGH,
+    SO101_ACTION_LOW,
+    bound_action_chunk,
+)
+from architecture_a.inspection import inspect_environment
 from architecture_a.so101_env import SO101MuJoCoEnvironment
 from architecture_a.vla_confidence import estimate_vla_confidence
 from shared.handoff import FileHandoffTransport, build_escalation_request
@@ -25,11 +32,12 @@ DEFAULT_VLM = Path(".hf-cache/checkpoints/smolvlm2_500m_video_instruct")
 TASK_TEMPLATE = "Pick up the red sample and place it in the {target}."
 WAREHOUSE_TASKS = {
     "conveyor": "Pick up the package and place it on the conveyor.",
-    "left_tray": "Put the package in the blue inspection tray.",
-    "right_tray": "Put the package in the yellow rejection tray.",
+    "left_tray": "The package barcode is missing. Place it in the blue inspection tray.",
+    "right_tray": "The package is damaged. Place it in the yellow rejection tray.",
 }
-ACTION_LOW = np.array((-1.8, -1.7, -2.0, -1.8, -2.8, 0.0))
-ACTION_HIGH = np.array((1.8, 1.5, 1.8, 1.8, 2.8, 0.025))
+ACTION_LOW = SO101_ACTION_LOW
+ACTION_HIGH = SO101_ACTION_HIGH
+ACTION_BOUND_TOLERANCE = SO101_ACTION_BOUND_TOLERANCE
 
 
 def image_tensor(image: np.ndarray) -> torch.Tensor:
@@ -99,12 +107,36 @@ def main() -> None:
         help="Maximum gripper change per action; 0 disables the limit.",
     )
     parser.add_argument("--output", type=Path, default=Path("outputs/evaluation"))
+    parser.add_argument(
+        "--record-camera",
+        choices=("overhead", "observer"),
+        default="overhead",
+        help="Camera used only for the saved GIF; policy inputs are unchanged.",
+    )
     parser.add_argument("--device", default="cuda")
     parser.add_argument(
+        "--yolo-weights",
+        type=Path,
+        default=Path("outputs/train/warehouse_yolov8n_v9_single_wrist_damage_balanced/weights/best.pt"),
+        help="Local detector used to choose warehouse destinations from close views.",
+    )
+    parser.add_argument(
         "--scene",
-        choices=("pick_place", "warehouse_normal", "unexpected_obstacle"),
+        choices=(
+            "pick_place",
+            "warehouse_normal",
+            "barcode_missing",
+            "package_damaged",
+            "unexpected_obstacle",
+        ),
         default="pick_place",
         help="MuJoCo scene; warehouse_normal is OOD for the current checkpoint.",
+    )
+    parser.add_argument(
+        "--warehouse-layout",
+        choices=("v1", "v2", "v3"),
+        default="v1",
+        help="Versioned warehouse geometry; v1 preserves the published benchmark.",
     )
     parser.add_argument("--vla-confidence-threshold", type=float, default=0.25)
     parser.add_argument(
@@ -165,22 +197,50 @@ def main() -> None:
         observation_images=False,
         kinematic_control=True,
         scenario=args.scene,
+        warehouse_layout=args.warehouse_layout,
     )
+    condition_scenes = {"warehouse_normal", "barcode_missing", "package_damaged"}
+    inspection_detector = None
+    if args.scene in condition_scenes:
+        if not args.yolo_weights.is_file():
+            raise FileNotFoundError(
+                f"Warehouse inspection weights do not exist: {args.yolo_weights.resolve()}"
+            )
+        from shared.perception import YoloDetector
+
+        inspection_detector = YoloDetector(
+            model_path=str(args.yolo_weights),
+            conf_threshold=0.05,
+            device=args.device,
+        )
     episode_results: list[dict[str, object]] = []
     try:
         for episode_id in range(args.episodes):
+            # Match B/C: measure from environment reset and visual perception
+            # through the validated execution result. Policy construction is
+            # outside the episode timer; warm episodes also exclude lazy model
+            # initialization.
+            start = time.perf_counter()
             seed = args.seed + episode_id
             np.random.seed(seed)
             torch.manual_seed(seed)
             if args.device.startswith("cuda"):
                 torch.cuda.manual_seed_all(seed)
             probe = environment.reset(seed=seed, instruction="")
-            target = str(probe.metadata["target_name"])
-            instruction = (
-                TASK_TEMPLATE.format(target=target)
-                if args.scene == "pick_place"
-                else WAREHOUSE_TASKS[target]
-            )
+            inspection_decision = None
+            inspection_detections = None
+            if inspection_detector is not None:
+                inspection_decision, _, inspection_detections = inspect_environment(
+                    environment, inspection_detector
+                )
+                instruction = inspection_decision.instruction or "STOP: visual inspection inconclusive."
+            else:
+                target = str(probe.metadata["target_name"])
+                instruction = (
+                    TASK_TEMPLATE.format(target=target)
+                    if args.scene == "pick_place"
+                    else WAREHOUSE_TASKS[target]
+                )
             observation = environment.reset(seed=seed, instruction=instruction)
             initial_sample_position = np.asarray(
                 observation.metadata["sample_position"], dtype=np.float32
@@ -188,14 +248,20 @@ def main() -> None:
             policy.reset()
             frames = [
                 environment.capture_rgb(
-                    camera="overhead", width=320, height=240
+                    camera=args.record_camera, width=320, height=240
                 )
             ]
             success = False
             action_history: list[tuple[float, ...]] = []
             clipped_commands = 0
-            invalid_action = False
-            preexecution_stop_reason = None
+            maximum_action_bound_overshoot = 0.0
+            rejected_action_violation = None
+            preexecution_stop_reason = (
+                "visual_inspection_inconclusive"
+                if inspection_decision is not None and inspection_decision.should_escalate
+                else None
+            )
+            invalid_action = preexecution_stop_reason is not None
             previous_command = np.asarray(
                 observation.robot_state, dtype=np.float32
             )
@@ -203,9 +269,13 @@ def main() -> None:
             previous_chunk: np.ndarray | None = None
             vla_confidences = []
             replans = 0
-            start = time.perf_counter()
-
-            for step in range(1, args.max_steps + 1):
+            step = 0
+            step_range = (
+                range(1, args.max_steps + 1)
+                if preexecution_stop_reason is None
+                else ()
+            )
+            for step in step_range:
                 if (
                     args.replan_every > 0
                     and step > 1
@@ -249,21 +319,34 @@ def main() -> None:
                     )
                     vla_confidences.append(estimate)
                     previous_chunk = chunk_values.copy()
-                    collision_index = environment.predict_obstacle_collision(
-                        chunk_values
-                    )
                     if not np.isfinite(chunk_values).all():
                         preexecution_stop_reason = "non_finite_action_chunk"
-                    elif np.any(
-                        (chunk_values < ACTION_LOW) | (chunk_values > ACTION_HIGH)
-                    ):
-                        preexecution_stop_reason = "action_chunk_out_of_bounds"
-                    elif collision_index is not None:
-                        preexecution_stop_reason = (
-                            f"predicted_obstacle_collision_at_command_{collision_index}"
+                    else:
+                        bounded = bound_action_chunk(
+                            chunk_values,
+                            action_low=ACTION_LOW,
+                            action_high=ACTION_HIGH,
+                            tolerance=ACTION_BOUND_TOLERANCE,
                         )
-                    elif estimate.confidence < args.vla_confidence_threshold:
-                        preexecution_stop_reason = "low_vla_action_consistency"
+                        maximum_action_bound_overshoot = max(
+                            maximum_action_bound_overshoot,
+                            bounded.maximum_overshoot,
+                        )
+                        if not bounded.accepted:
+                            rejected_action_violation = bounded.violation
+                            preexecution_stop_reason = "action_chunk_out_of_bounds"
+                        else:
+                            chunk_values = bounded.values
+                            clipped_commands += bounded.clipped_rows
+                            collision_index = environment.predict_obstacle_collision(
+                                chunk_values
+                            )
+                            if collision_index is not None:
+                                preexecution_stop_reason = (
+                                    f"predicted_obstacle_collision_at_command_{collision_index}"
+                                )
+                            elif estimate.confidence < args.vla_confidence_threshold:
+                                preexecution_stop_reason = "low_vla_action_consistency"
                     if preexecution_stop_reason is not None:
                         invalid_action = True
                         break
@@ -312,7 +395,7 @@ def main() -> None:
                 success = bool(transition.info["success"])
                 frames.append(
                     environment.capture_rgb(
-                        camera="overhead", width=320, height=240
+                        camera=args.record_camera, width=320, height=240
                     )
                 )
                 if transition.terminated or transition.truncated:
@@ -354,6 +437,10 @@ def main() -> None:
                 "latency_seconds": round(time.perf_counter() - start, 3),
                 "replans": replans,
                 "clipped_commands": clipped_commands,
+                "maximum_action_bound_overshoot": round(
+                    maximum_action_bound_overshoot, 8
+                ),
+                "rejected_action_violation": rejected_action_violation,
                 "failure_reason": failure_reason,
                 "preexecution_stop_reason": preexecution_stop_reason,
                 "minimum_vla_confidence": round(minimum_vla_confidence, 6),
@@ -366,6 +453,23 @@ def main() -> None:
                     }
                     for item in vla_confidences
                 ],
+                "visual_inspection": (
+                    {
+                        "routing_source": "visual_detection_only",
+                        "destination": inspection_decision.destination,
+                        "reason": inspection_decision.reason,
+                        "should_escalate": inspection_decision.should_escalate,
+                        "barcode_confidence": round(inspection_decision.barcode_confidence, 6),
+                        "damage_confidence": round(inspection_decision.damage_confidence, 6),
+                        "package_confidence": round(inspection_decision.package_confidence, 6),
+                        "detections": {
+                            name: [item.as_dict() for item in items]
+                            for name, items in (inspection_detections or {}).items()
+                        },
+                    }
+                    if inspection_decision is not None
+                    else None
+                ),
                 "escalation_recommended": (
                     not success
                     or minimum_vla_confidence < args.vla_confidence_threshold
@@ -417,9 +521,28 @@ def main() -> None:
                     task_state={
                         "held_object": held_object,
                         "package_position": result["final_sample_position"],
-                        "target_name": observation.metadata["target_name"],
+                        "target_name": (
+                            inspection_decision.destination
+                            if inspection_decision is not None
+                            else observation.metadata["target_name"]
+                        ),
+                        "target_role": (
+                            inspection_decision.destination
+                            if inspection_decision is not None
+                            else observation.metadata.get("target_role")
+                        ),
                         "target_position": result["target_position"],
-                        "problem": observation.metadata["problem"],
+                        "problem": (
+                            "barcode_missing"
+                            if inspection_decision is not None
+                            and inspection_decision.destination == "inspection_tray"
+                            else "package_damaged"
+                            if inspection_decision is not None
+                            and inspection_decision.destination == "rejection_tray"
+                            else None
+                            if inspection_decision is not None
+                            else observation.metadata["problem"]
+                        ),
                     },
                     architecture_a_signals={
                         "minimum_vla_confidence": round(
@@ -444,6 +567,7 @@ def main() -> None:
                     observation_images=False,
                     kinematic_control=True,
                     scenario=args.scene,
+                    warehouse_layout=args.warehouse_layout,
                 )
                 try:
                     replay_environment.reset(seed=seed, instruction=instruction)

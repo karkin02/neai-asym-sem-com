@@ -7,15 +7,19 @@ environment with numpy.
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import numpy as np
 
 from shared.perception import (
     ClipGrounder,
+    WarehouseClipGrounder,
     Detection,
     YoloDetector,
     build_scene_graph,
     crop_bbox,
+    detect_package_damage_mark,
     parse_yolo_result,
 )
 
@@ -111,6 +115,37 @@ class SceneGraphTest(unittest.TestCase):
 
 
 class ClipGroundingTest(unittest.TestCase):
+    def test_warehouse_prototype_grounding_selects_package_crop(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "prototypes.npz"
+            np.savez_compressed(
+                path,
+                class_names=np.asarray(["package", "left_tray"]),
+                prototypes=np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32),
+            )
+            clip = ClipGrounder(
+                embedder=_FakeEmbedder(
+                    image_vectors=[[0.99, 0.01], [0.1, 0.9]],
+                    text_vector=[0.0, 1.0],
+                )
+            )
+            result = WarehouseClipGrounder(path, clip_grounder=clip).score(
+                "pick up the package",
+                [np.zeros((4, 4, 3), np.uint8), np.zeros((4, 4, 3), np.uint8)],
+            )
+            self.assertEqual(result.best_index, 0)
+            self.assertGreater(result.margin, 0.5)
+
+    def test_single_crop_confidence_uses_absolute_similarity(self):
+        embedder = _FakeEmbedder(
+            image_vectors=np.array([[1.0, 0.0]]),
+            text_vector=np.array([0.0, 1.0]),
+        )
+        result = ClipGrounder(embedder=embedder).score(
+            "sample", [np.zeros((4, 4, 3), dtype=np.uint8)]
+        )
+        self.assertAlmostEqual(result.confidence, 0.5)
+
     def test_scores_pick_best_matching_crop(self):
         # text vector aligns with the second crop
         grounder = ClipGrounder(
@@ -123,6 +158,7 @@ class ClipGroundingTest(unittest.TestCase):
         result = grounder.score("the target", crops)
         self.assertEqual(result.best_index, 1)
         self.assertGreater(result.confidence, 0.5)
+        self.assertGreater(result.margin, 0.0)
         self.assertAlmostEqual(sum(result.probabilities), 1.0, places=5)
 
     def test_empty_crops_zero_confidence(self):
@@ -130,6 +166,24 @@ class ClipGroundingTest(unittest.TestCase):
         result = grounder.score("anything", [])
         self.assertEqual(result.confidence, 0.0)
         self.assertEqual(result.best_index, -1)
+
+    def test_damage_verifier_accepts_narrow_saturated_red_stripe(self):
+        frame = np.zeros((80, 100, 3), dtype=np.uint8)
+        frame[25:60, 70:73] = (200, 20, 20)
+        result = detect_package_damage_mark(
+            frame, [Detection("package", 0.95, (20, 10, 90, 70))]
+        )
+        self.assertIsNotNone(result)
+        self.assertEqual(result.label, "damage_mark")
+        self.assertGreaterEqual(result.confidence, 0.45)
+
+    def test_damage_verifier_rejects_wide_obstacle_stripe(self):
+        frame = np.zeros((80, 100, 3), dtype=np.uint8)
+        frame[25:60, 35:80] = (200, 20, 20)
+        result = detect_package_damage_mark(
+            frame, [Detection("package", 0.95, (20, 10, 90, 70))]
+        )
+        self.assertIsNone(result)
 
 
 if __name__ == "__main__":

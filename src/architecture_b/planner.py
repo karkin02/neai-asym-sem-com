@@ -12,8 +12,9 @@ Two interchangeable implementations share the :class:`Planner` interface:
 - :class:`HeuristicPlanner` — a deterministic, offline fallback so B can run and
   be tested with no API key or network.
 
-The structured target's ``destination`` uses the same vocabulary as the shared
-handoff contract (``conveyor`` / ``left_tray`` / ``right_tray``).
+The structured target uses semantic destination roles (``conveyor`` /
+``inspection_tray`` / ``rejection_tray``). Legacy physical names are accepted
+at the parser boundary and normalized before local execution.
 """
 
 from __future__ import annotations
@@ -25,8 +26,11 @@ from dataclasses import dataclass
 from typing import Any, Optional, Protocol
 
 from .payload import CompressionLevel, Payload
+from shared.destinations import normalize_destination
 
-DESTINATIONS = ("conveyor", "left_tray", "right_tray")
+DESTINATIONS = ("conveyor", "inspection_tray", "rejection_tray")
+COMMANDS = ("STOP", "RETRY", "REROUTE", "CONTINUE")
+MAX_COMPLETION_TOKENS = 150
 
 
 @dataclass(frozen=True)
@@ -46,6 +50,9 @@ class ActionTarget:
     gripper: str
     reasoning: str
     source: str
+    command: str = "STOP"
+    confidence: float = 0.0
+    evidence: tuple[str, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -54,6 +61,9 @@ class ActionTarget:
             "gripper": self.gripper,
             "reasoning": self.reasoning,
             "source": self.source,
+            "command": self.command,
+            "confidence": self.confidence,
+            "evidence": list(self.evidence),
         }
 
 
@@ -62,10 +72,20 @@ class Planner(Protocol):
 
 
 _SCHEMA_INSTRUCTION = (
+    "Use only detected visual evidence, including the detector-derived boolean "
+    "visual_observations and their camera provenance. A false barcode is a "
+    "reliable negative only when barcode_inspection_complete=true. "
+    "Policy: damage_mark_detected=true => REROUTE to "
+    "rejection_tray; barcode_inspection_complete=true with barcode_detected=false => "
+    "REROUTE to inspection_tray; barcode_detected=true with no damage => "
+    "CONTINUE to conveyor; obstacle, incomplete inspection, "
+    "conflict, or insufficient evidence => STOP with destination null. "
     "Respond with STRICT JSON only, no prose, exactly: "
-    '{"target_object": "<label or null>", '
-    '"destination": "conveyor|left_tray|right_tray", '
-    '"gripper": "open|close", "reasoning": "<one sentence>"}'
+    '{"command":"STOP|RETRY|REROUTE|CONTINUE",'
+    '"target_object":"<detected label or null>",'
+    '"destination":"conveyor|inspection_tray|rejection_tray|null",'
+    '"gripper":"open|close","confidence":<number 0..1>,'
+    '"evidence":["<detected fact>"],"reasoning":"<one sentence>"}'
 )
 
 
@@ -75,19 +95,31 @@ def parse_action_target(text: str, source: str) -> ActionTarget:
     if not match:
         raise ValueError(f"No JSON object found in planner response: {text!r}")
     data = json.loads(match.group(0))
-    destination = data.get("destination")
+    destination = normalize_destination(data.get("destination"))
     if destination not in DESTINATIONS:
         destination = None
     gripper = str(data.get("gripper", "close")).lower()
     if gripper not in ("open", "close"):
         gripper = "close"
     target_object = data.get("target_object")
+    command = str(data.get("command", "STOP")).upper()
+    if command not in COMMANDS:
+        command = "STOP"
+    try:
+        confidence = min(1.0, max(0.0, float(data.get("confidence", 0.0))))
+    except (TypeError, ValueError):
+        confidence = 0.0
+    evidence_value = data.get("evidence", [])
+    evidence = tuple(str(item) for item in evidence_value) if isinstance(evidence_value, list) else ()
     return ActionTarget(
         target_object=str(target_object) if target_object else None,
         destination=destination,
         gripper=gripper,
         reasoning=str(data.get("reasoning", "")),
         source=source,
+        command=command,
+        confidence=confidence,
+        evidence=evidence,
     )
 
 
@@ -133,7 +165,9 @@ class GptPlanner:
     def plan(self, payload: Payload) -> ActionTarget:
         client = self._ensure_client()
         response = client.chat.completions.create(
-            model=self.model, messages=self._build_messages(payload)
+            model=self.model,
+            messages=self._build_messages(payload),
+            max_completion_tokens=MAX_COMPLETION_TOKENS,
         )
         text = response.choices[0].message.content or ""
         return parse_action_target(text, source=self.model)
@@ -149,30 +183,59 @@ class HeuristicPlanner:
 
     REJECT_WORDS = ("reject", "damaged", "defect", "discard")
     INSPECT_WORDS = ("inspect", "barcode", "missing", "check", "left")
+    TARGET_LABELS = ("package", "sample", "parcel", "box")
+    INFRASTRUCTURE_WORDS = ("tray", "zone", "bin", "conveyor", "obstacle")
 
     def plan(self, payload: Payload) -> ActionTarget:
         instruction = payload.instruction.lower()
-        if any(w in instruction for w in self.REJECT_WORDS):
-            destination = "right_tray"
-        elif any(w in instruction for w in self.INSPECT_WORDS):
-            destination = "left_tray"
-        else:
+        scene = payload.content.get("scene", {}) if isinstance(payload.content, dict) else {}
+        labels = [str(obj.get("label", "")).lower() for obj in scene.get("objects", [])]
+        labels = ["package" if label in {"sample", "box", "parcel"} else label for label in labels]
+        observations = scene.get("visual_observations", {})
+        if observations.get("obstacle_detected") or "obstacle" in labels:
+            command, destination = "STOP", None
+        elif observations.get("damage_mark_detected") or (
+            not observations and "damage_mark" in labels
+        ):
+            command = "REROUTE"
+            destination = "rejection_tray"
+        elif observations.get("barcode_detected"):
+            command = "CONTINUE"
             destination = "conveyor"
+        elif observations.get("barcode_inspection_complete") or observations.get("inspection_complete"):
+            command = "REROUTE"
+            destination = "inspection_tray"
+        elif any(w in instruction for w in self.REJECT_WORDS):
+            command, destination = "REROUTE", "rejection_tray"
+        elif any(w in instruction for w in self.INSPECT_WORDS):
+            command, destination = "REROUTE", "inspection_tray"
+        else:
+            command, destination = "STOP", None
 
         target_object = None
-        scene = payload.content.get("scene", {}) if isinstance(payload.content, dict) else {}
-        for obj in scene.get("objects", []):
-            label = obj.get("label", "")
-            if "tray" not in label and "zone" not in label:
-                target_object = label
-                break
+        target_object = next(
+            (label for label in labels if any(word in label for word in self.TARGET_LABELS)),
+            None,
+        )
+        if target_object is None:
+            target_object = next(
+                (
+                    label
+                    for label in labels
+                    if label and not any(word in label for word in self.INFRASTRUCTURE_WORDS)
+                ),
+                None,
+            )
 
         return ActionTarget(
             target_object=target_object,
             destination=destination,
-            gripper="close",
+            gripper="open",
             reasoning=f"heuristic route to {destination}",
             source="heuristic",
+            command=command,
+            confidence=1.0,
+            evidence=tuple(labels),
         )
 
 

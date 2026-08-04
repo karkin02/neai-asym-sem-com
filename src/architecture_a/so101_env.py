@@ -4,6 +4,8 @@ import time
 import random
 from typing import Any
 
+from shared.destinations import normalize_destination
+
 import mujoco
 import numpy as np
 
@@ -189,6 +191,18 @@ _SO101_XML = """
                 <geom type="cylinder" size="0.03 0.035" material="joint"/>
                 <camera name="wrist" pos="0 0.09 0.10"
                         xyaxes="1 0 0 0 0.70 0.70" fovy="70"/>
+                <!-- Dedicated close-inspection mount. Its fixed orientation is
+                     calibrated for a 0.12 m package standoff; keeping this
+                     separate preserves SmolVLA's original wrist observation. -->
+                <camera name="wrist_inspection" pos="0 0.09 0.10"
+                        quat="-0.14163245 -0.45569926 0.71569259 0.50996328"
+                        fovy="70"/>
+                <!-- Fixed wrist-mounted oblique camera. At the calibrated
+                     damage pose it reproduces the former package-following
+                     free-camera geometry without moving independently. -->
+                <camera name="damage_inspection" pos="0.004246 -0.047924 0.003285"
+                        quat="-0.292137 -0.386066 0.863981 -0.138370"
+                        fovy="45"/>
                 <body name="left_finger" pos="-0.027 0 0.03">
                   <joint name="gripper" type="slide" axis="1 0 0"
                          range="0 0.025"/>
@@ -212,6 +226,9 @@ _SO101_XML = """
 
     <camera name="overhead" pos="0 -1.05 1.05"
             xyaxes="1 0 0 0 0.67 0.74" fovy="48"/>
+    <!-- Original angled warehouse view, retained only for human demo execution frames. -->
+    <camera name="observer" pos="0 -1.05 1.05"
+            xyaxes="1 0 0 0 0.67 0.74" fovy="31"/>
   </worldbody>
   <contact>
     <pair geom1="sample_geom" geom2="conveyor_belt"
@@ -253,6 +270,23 @@ class SO101MuJoCoEnvironment:
         "left_tray": np.array((-0.14, 0.25, 0.075)),
         "right_tray": np.array((0.14, 0.25, 0.075)),
     }
+    WAREHOUSE_LAYOUTS = {
+        "v1": {
+            "left_tray": np.array((-0.17, 0.16, 0.075)),
+            "right_tray": np.array((0.17, 0.16, 0.075)),
+            "conveyor": np.array((0.0, 0.30, 0.075)),
+        },
+        "v2": {
+            "left_tray": np.array((-0.15, 0.14, 0.075)),
+            "right_tray": np.array((0.15, 0.14, 0.075)),
+            "conveyor": np.array((0.0, 0.26, 0.075)),
+        },
+        "v3": {
+            "left_tray": np.array((-0.15, 0.14, 0.075)),
+            "right_tray": np.array((0.15, 0.14, 0.075)),
+            "conveyor": np.array((0.0, 0.26, 0.075)),
+        },
+    }
     WAREHOUSE_TARGET_POSITIONS = {
         "left_tray": np.array((-0.17, 0.16, 0.075)),
         "right_tray": np.array((0.17, 0.16, 0.075)),
@@ -268,6 +302,14 @@ class SO101MuJoCoEnvironment:
         "obstacle_vla_violation",
         "damaged_vla_violation",
     )
+    BARCODE_INSPECTION_POSE = np.array(
+        (-1.4047251044, -0.5137837024, -1.2718737072,
+         0.1710056685, 1.2997269143, 0.02)
+    )
+    DAMAGE_INSPECTION_POSE = np.array(
+        (1.1573390786, 0.3129013740, 1.4962409985,
+         -0.4586209168, -1.1732841271, 0.02)
+    )
 
     def __init__(
         self,
@@ -277,6 +319,7 @@ class SO101MuJoCoEnvironment:
         observation_images: bool = True,
         kinematic_control: bool = False,
         scenario: str = "pick_place",
+        warehouse_layout: str = "v1",
     ) -> None:
         if scenario not in self.SCENARIOS:
             raise ValueError(
@@ -289,6 +332,16 @@ class SO101MuJoCoEnvironment:
         self._observation_images = observation_images
         self._kinematic_control = kinematic_control
         self._scenario = scenario
+        if warehouse_layout not in self.WAREHOUSE_LAYOUTS:
+            raise ValueError(
+                f"Unknown warehouse layout {warehouse_layout!r}; expected v1, v2, or v3."
+            )
+        self._warehouse_layout = warehouse_layout
+        self.WAREHOUSE_TARGET_POSITIONS = {
+            name: value.copy()
+            for name, value in self.WAREHOUSE_LAYOUTS[warehouse_layout].items()
+        }
+        self.CONVEYOR_POSITION = self.WAREHOUSE_TARGET_POSITIONS["conveyor"].copy()
         self._viewer: Any | None = None
         self._renderers: dict[tuple[str, int, int], mujoco.Renderer] = {}
         self._steps = 0
@@ -395,10 +448,15 @@ class SO101MuJoCoEnvironment:
         mujoco.mj_resetData(self._model, self._data)
         self._apply_scenario_appearance()
         sample_x_limit = 0.08 if self._scenario != "pick_place" else 0.12
+        sample_y_range = (
+            (0.03, 0.11)
+            if self._scenario != "pick_place" and self._warehouse_layout in {"v2", "v3"}
+            else (0.04, 0.16)
+        )
         sample_position = np.array(
             (
                 self._rng.uniform(-sample_x_limit, sample_x_limit),
-                self._rng.uniform(0.04, 0.16),
+                self._rng.uniform(*sample_y_range),
                 0.045,
             )
         )
@@ -483,6 +541,45 @@ class SO101MuJoCoEnvironment:
         renderer.update_scene(self._data, camera=camera)
         return renderer.render()
 
+    def capture_condition_views(
+        self, *, width: int = 320, height: int = 240
+    ) -> dict[str, np.ndarray]:
+        """Capture non-destructive close views for barcode/damage inspection.
+
+        Both views use the original policy wrist camera.  Only the arm pose is
+        changed between inspections, matching how a physical robot uses one
+        eye-in-hand camera. Simulator state is restored before returning.
+        """
+        saved_qpos = self._data.qpos.copy()
+        saved_qvel = self._data.qvel.copy()
+        renderer = mujoco.Renderer(self._model, height=height, width=width)
+        try:
+            # Calibrated absolute arm poses. Package randomization in layout v3
+            # remains inside both close views; these poses deliberately retain
+            # the original wrist-camera intrinsics and mounting orientation.
+            wrist_joints = self.BARCODE_INSPECTION_POSE
+            for value, address in zip(wrist_joints, self._joint_qpos_addresses):
+                self._data.qpos[address] = value
+            self._data.qvel[:] = 0.0
+            mujoco.mj_forward(self._model, self._data)
+            renderer.update_scene(self._data, camera="wrist")
+            barcode = renderer.render().copy()
+
+            damage_joints = self.DAMAGE_INSPECTION_POSE
+            for value, address in zip(damage_joints, self._joint_qpos_addresses):
+                self._data.qpos[address] = value
+            self._data.qvel[:] = 0.0
+            mujoco.mj_forward(self._model, self._data)
+            renderer.update_scene(self._data, camera="wrist")
+            damage = renderer.render().copy()
+
+        finally:
+            renderer.close()
+            self._data.qpos[:] = saved_qpos
+            self._data.qvel[:] = saved_qvel
+            mujoco.mj_forward(self._model, self._data)
+        return {"barcode": barcode, "damage": damage}
+
     def close(self) -> None:
         for renderer in self._renderers.values():
             renderer.close()
@@ -529,6 +626,7 @@ class SO101MuJoCoEnvironment:
                     float(value) for value in self.end_effector_position
                 ),
                 "target_name": self._target_name,
+                "target_role": normalize_destination(self._target_name),
                 "target_position": tuple(
                     float(value) for value in self.target_positions[self._target_name]
                 ),
@@ -563,10 +661,14 @@ class SO101MuJoCoEnvironment:
         return {
             "task": "warehouse_pick",
             "zones": {
-                "conveyor": "normal packages",
-                "left_tray_blue": "manual inspection",
-                "right_tray_yellow": "damaged-package rejection",
-                "outbound_bin_green": "completed normal shipments",
+                "conveyor": {"role": "normal routing", "color": "dark"},
+                "inspection_tray": {
+                    "role": "manual inspection", "color": "blue", "physical_target": "left_tray"
+                },
+                "rejection_tray": {
+                    "role": "damaged-package rejection", "color": "yellow", "physical_target": "right_tray"
+                },
+                "outbound_bin": {"role": "completed shipments", "color": "green"},
             },
             "objects": [
                 {
@@ -627,18 +729,35 @@ class SO101MuJoCoEnvironment:
 
     def _apply_scenario_appearance(self) -> None:
         warehouse = self._scenario != "pick_place"
+        warehouse_targets = self.WAREHOUSE_TARGET_POSITIONS
+        scanner_visible_marks = warehouse and self._warehouse_layout in {"v2", "v3"}
+        overhead_camera = self._model.camera("overhead")
+        if warehouse and self._warehouse_layout == "v2":
+            overhead_camera.pos = (0.0, 0.10, 1.10)
+            overhead_camera.quat = (1.0, 0.0, 0.0, 0.0)
+        elif warehouse and self._warehouse_layout == "v3":
+            overhead_camera.pos = (0.0, 0.10, 1.10)
+            overhead_camera.quat = (1.0, 0.0, 0.0, 0.0)
+            overhead_camera.fovy = 31.0
         tray_positions = (
-            ((-0.17, 0.16, 0.025), (0.17, 0.16, 0.025))
+            (
+                (*warehouse_targets["left_tray"][:2], 0.025),
+                (*warehouse_targets["right_tray"][:2], 0.025),
+            )
             if warehouse
             else ((-0.14, 0.25, 0.025), (0.14, 0.25, 0.025))
         )
         self._model.body("left_tray").pos = tray_positions[0]
         self._model.body("right_tray").pos = tray_positions[1]
         self._model.body("warehouse_conveyor").pos = (
-            (0.0, 0.30, 0.055) if warehouse else (0.0, 0.30, -1.0)
+            (*warehouse_targets["conveyor"][:2], 0.055)
+            if warehouse
+            else (0.0, 0.30, -1.0)
         )
         self._model.body("outbound_bin").pos = (
-            (0.385, 0.30, 0.018) if warehouse else (0.385, 0.30, -1.0)
+            (0.385, float(warehouse_targets["conveyor"][1]), 0.018)
+            if warehouse
+            else (0.385, 0.30, -1.0)
         )
         self._model.body("unexpected_obstacle").pos = (
             (0.0, 0.055, 0.0)
@@ -650,6 +769,37 @@ class SO101MuJoCoEnvironment:
         self._model.geom("right_tray_geom").size = tray_size
         self._model.geom("sample_geom").rgba = (
             (0.55, 0.30, 0.12, 1.0) if warehouse else (0.84, 0.12, 0.10, 1.0)
+        )
+        # V2 packages use scanner-visible markings while v1 dimensions remain
+        # unchanged for benchmark reproducibility.
+        self._model.geom("package_label").size = (
+            (0.026, 0.023, 0.001) if scanner_visible_marks else (0.020, 0.014, 0.001)
+        )
+        barcode_sizes = (
+            ((0.0018, 0.019, 0.0007), (0.0013, 0.019, 0.0007),
+             (0.0023, 0.019, 0.0007), (0.0014, 0.019, 0.0007))
+            if scanner_visible_marks
+            else ((0.0015, 0.011, 0.0005), (0.001, 0.011, 0.0005),
+                  (0.002, 0.011, 0.0005), (0.001, 0.011, 0.0005))
+        )
+        for name, size in zip(self._barcode_geom_names, barcode_sizes):
+            self._model.geom(name).size = size
+        top_damage_size = (
+            (0.027, 0.004, 0.0015)
+            if scanner_visible_marks
+            else (0.021, 0.0025, 0.001)
+        )
+        for name in ("damage_mark_1", "damage_mark_2"):
+            self._model.geom(name).size = top_damage_size
+        self._model.geom("damage_mark_front").size = (
+            (0.026, 0.0015, 0.005)
+            if scanner_visible_marks
+            else (0.020, 0.001, 0.003)
+        )
+        self._model.geom("damage_mark_side").size = (
+            (0.0015, 0.026, 0.005)
+            if scanner_visible_marks
+            else (0.001, 0.020, 0.003)
         )
         for name in self._warehouse_geom_names:
             geom = self._model.geom(name)
@@ -855,6 +1005,58 @@ class SO101MuJoCoEnvironment:
                 if self._obstacle_geom_id in pair and pair & self._arm_geom_ids:
                     return command_index
         return None
+
+    def preview_action_success(self, action_chunk: np.ndarray) -> bool:
+        """Simulate an action chunk, then restore the episode exactly.
+
+        This outcome gate prevents a locally generated chunk that cannot pass
+        placement validation from disturbing the live scene before recovery.
+        It is intentionally simulator-only; hardware adapters must provide
+        their own certified forward model rather than claiming this capability.
+        """
+        commands = np.asarray(action_chunk, dtype=float)
+        if commands.ndim != 2 or commands.shape[1] != len(self.JOINT_NAMES):
+            raise ValueError("Expected an N x 6 absolute joint-position chunk.")
+        saved = {
+            "qpos": self._data.qpos.copy(),
+            "qvel": self._data.qvel.copy(),
+            "ctrl": self._data.ctrl.copy(),
+            "time": float(self._data.time),
+            "steps": self._steps,
+            "held": self._held,
+            "collision_stop": self._collision_stop,
+            "obstacle_tipped": self._obstacle_tipped,
+            "conveyor_phase": self._conveyor_phase,
+            "viewer": self._viewer,
+            "realtime": self._realtime,
+        }
+        success = False
+        try:
+            self._viewer = None
+            self._realtime = False
+            for command in commands:
+                result = self.step(
+                    Action("joint_position", tuple(float(v) for v in command))
+                )
+                if result.info.get("success"):
+                    success = True
+                    break
+                if result.terminated or result.truncated:
+                    break
+        finally:
+            self._data.qpos[:] = saved["qpos"]
+            self._data.qvel[:] = saved["qvel"]
+            self._data.ctrl[:] = saved["ctrl"]
+            self._data.time = saved["time"]
+            self._steps = saved["steps"]
+            self._held = saved["held"]
+            self._collision_stop = saved["collision_stop"]
+            self._obstacle_tipped = saved["obstacle_tipped"]
+            self._conveyor_phase = saved["conveyor_phase"]
+            self._viewer = saved["viewer"]
+            self._realtime = saved["realtime"]
+            mujoco.mj_forward(self._model, self._data)
+        return success
 
     @property
     def joint_positions(self) -> tuple[float, ...]:

@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional, Sequence
 
 from .planner import ActionTarget
+from shared.destinations import physical_target
 
 # Gripper actuator values in metres (env range 0.0 .. 0.025). solve_ik takes a
 # float gripper command, so the planner's "open"/"close" intent maps to these.
@@ -45,6 +46,7 @@ class JointAction:
 class ExecutionResult:
     success: bool
     steps: int
+    attempts: int = 0
     final_info: dict[str, Any] = field(default_factory=dict)
     joint_commands: list[list[float]] = field(default_factory=list)
     failure_reason: Optional[str] = None
@@ -60,16 +62,22 @@ class ScriptedController:
             3D world position. Defaults to ``env.target_positions``.
     """
 
-    def __init__(self, env: Any, destination_positions: Optional[dict[str, Sequence[float]]] = None) -> None:
+    def __init__(
+        self,
+        env: Any,
+        destination_positions: Optional[dict[str, Sequence[float]]] = None,
+        max_attempts: int = 2,
+    ) -> None:
         self._env = env
         self._destinations = destination_positions
+        self._max_attempts = max(1, int(max_attempts))
 
     def _destination_position(self, destination: Optional[str]) -> Sequence[float]:
         table = self._destinations if self._destinations is not None else dict(self._env.target_positions)
-        if destination is not None and destination in table:
-            return table[destination]
-        # Fall back to any known target so execution still proceeds.
-        return next(iter(table.values()))
+        target_name = physical_target(destination)
+        if target_name not in table:
+            raise ValueError(f"Physical destination {target_name!r} is unavailable.")
+        return table[target_name]
 
     def _step(self, joints: Sequence[float], result: ExecutionResult) -> Any:
         values = tuple(float(v) for v in joints)
@@ -87,20 +95,32 @@ class ScriptedController:
         """
         result = ExecutionResult(success=False, steps=0)
         env = self._env
-        object_pos = tuple(float(v) for v in env.sample_position)
         dest_pos = tuple(float(v) for v in self._destination_position(target.destination))
 
-        try:
-            self._step(env.solve_ik(object_pos, gripper=GRIPPER_OPEN), result)
-            self._step(env.solve_ik(object_pos, gripper=GRIPPER_CLOSE), result)
-            self._step(env.solve_ik(dest_pos, gripper=GRIPPER_CLOSE), result)
-            last = self._step(env.solve_ik(dest_pos, gripper=gripper_value(target.gripper)), result)
-        except Exception as exc:  # keep a failed IK/step from crashing the trial
-            result.failure_reason = f"execution_error: {exc}"
-            return result
+        for attempt in range(1, self._max_attempts + 1):
+            result.attempts = attempt
+            # Re-observe the object before every bounded recovery attempt. A
+            # failed local policy or first grasp can move it substantially.
+            object_pos = tuple(float(v) for v in env.sample_position)
+            try:
+                self._step(env.solve_ik(object_pos, gripper=GRIPPER_OPEN), result)
+                self._step(env.solve_ik(object_pos, gripper=GRIPPER_CLOSE), result)
+                self._step(env.solve_ik(dest_pos, gripper=GRIPPER_CLOSE), result)
+                # A planner may select the semantic destination but cannot keep
+                # the physical gripper closed or issue joint commands.
+                last = self._step(env.solve_ik(dest_pos, gripper=GRIPPER_OPEN), result)
+            except Exception as exc:  # keep a failed IK/step from crashing the trial
+                result.failure_reason = f"execution_error: {exc}"
+                continue
 
-        info = dict(getattr(last, "info", {}) or {})
-        result.final_info = info
-        result.success = bool(info.get("success", False))
-        result.failure_reason = info.get("failure_reason") if not result.success else None
+            info = dict(getattr(last, "info", {}) or {})
+            result.final_info = info
+            result.success = bool(info.get("success", False))
+            result.failure_reason = (
+                None
+                if result.success
+                else info.get("failure_reason") or "placement_failed"
+            )
+            if result.success:
+                break
         return result

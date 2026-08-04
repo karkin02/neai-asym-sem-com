@@ -27,7 +27,7 @@ if (-not (Test-Path $venvPython)) {
 & $venvPython -m pip install --upgrade pip
 
 # Torch 2.12 installs this aggregate wheel; Torch 2.11 gfx1103 does not use it.
-& $venvPython -m pip uninstall -y "amd-torch-device-gfx11"
+& $venvPython -m pip uninstall -y "amd-torch-device-gfx11" "amd-torch-device-gfx110x"
 if ($LASTEXITCODE -ne 0) {
     throw "Could not remove the stale Torch 2.12 gfx11 package."
 }

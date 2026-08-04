@@ -306,6 +306,12 @@ def main() -> None:
         help="Scene and routing policy represented by every collected episode.",
     )
     parser.add_argument(
+        "--warehouse-layout",
+        choices=("v1", "v2", "v3"),
+        default="v1",
+        help="Versioned warehouse target geometry; v1 preserves prior benchmarks.",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path("outputs/demonstrations"),
@@ -317,6 +323,7 @@ def main() -> None:
         observation_images=False,
         kinematic_control=True,
         scenario=args.scenario,
+        warehouse_layout=args.warehouse_layout,
     )
     try:
         seeds = (

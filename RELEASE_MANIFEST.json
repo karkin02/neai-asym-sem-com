@@ -1,0 +1,455 @@
+﻿{
+    "schema":  "fol_release_manifest/v1",
+    "created":  "2026-08-02T19:30:28.2941227+08:00",
+    "embedded_assets":  {
+                            "yolo":  "outputs/train/warehouse_yolov8n_v9_single_wrist_damage_balanced/weights/best.pt",
+                            "clip":  "outputs/train/warehouse_clip_prototypes_v4_v3_medium.npz"
+                        },
+    "external_assets":  {
+                            "general_checkpoint":  "outputs/train/smolvla_pickplace_50/checkpoints/last/pretrained_model",
+                            "warehouse_checkpoint":  "outputs/train/warehouse_v3_150/checkpoints/002000/pretrained_model",
+                            "vlm":  ".hf-cache/checkpoints/smolvlm2_500m_video_instruct"
+                        },
+    "files":  [
+                  {
+                      "path":  ".gitignore",
+                      "sha256":  "8cd236061b315555a101ceddf7ddbef248021d4b5d4076568049367a30979a99",
+                      "bytes":  413
+                  },
+                  {
+                      "path":  ".python-version",
+                      "sha256":  "7b55f8e67b5623c4bef3fa691288da9437d79d3aba156de48d481db32ac7d16d",
+                      "bytes":  5
+                  },
+                  {
+                      "path":  "pyproject.toml",
+                      "sha256":  "3144db8c901904a55b8af1f696538dd302b31f8f560a5fec1afd180a5a5c407c",
+                      "bytes":  1060
+                  },
+                  {
+                      "path":  "README.md",
+                      "sha256":  "79f52af04a1bf61ca87b806517187d3562ca346defc7a00717ae83e26823303d",
+                      "bytes":  36035
+                  },
+                  {
+                      "path":  "requirements.txt",
+                      "sha256":  "d8148a1aafe77a525e44ff75fa521f1e7a5dfb16982291e0574aa08a336ef59c",
+                      "bytes":  513
+                  },
+                  {
+                      "path":  "config/architecture_a_model.json",
+                      "sha256":  "48f9ea6cb87e4be327252386447cce3b00825425f248bb0d5ffc2623355b900d",
+                      "bytes":  4256
+                  },
+                  {
+                      "path":  "config/so101_calibration.example.json",
+                      "sha256":  "3c0c97df280b37b71c5987e1a3612fd6268d2bbe2300df9df92f43997a2abee6",
+                      "bytes":  591
+                  },
+                  {
+                      "path":  "outputs/train/warehouse_clip_prototypes_v4_v3_medium.npz",
+                      "sha256":  "899bf485c885f988533b33a7e79f627493a6f5ce68065f0ef922b029a3134b07",
+                      "bytes":  15772
+                  },
+                  {
+                      "path":  "outputs/train/warehouse_yolov8n_v9_single_wrist_damage_balanced/weights/best.pt",
+                      "sha256":  "94ea17c548aa6a38f1fa0145fa03e211b005451a033cab4766f2484b2cd54840",
+                      "bytes":  6203242
+                  },
+                  {
+                      "path":  "scripts/benchmark_abc_gpu.ps1",
+                      "sha256":  "b0273e3c0d416815a4e08c2266996957a5e77a074171ca6b38856ee14b35108d",
+                      "bytes":  2886
+                  },
+                  {
+                      "path":  "scripts/benchmark_c_scenarios_gpu.ps1",
+                      "sha256":  "1362d3c4dce7b41537152b7c2ce6d2fb3f34d6349b33cd83a743172d646c6b4a",
+                      "bytes":  2677
+                  },
+                  {
+                      "path":  "scripts/calibrate_warehouse_clip_margin.py",
+                      "sha256":  "3a7649c1a2f15a40d284cace54868be5d181fb040c3de7250349660b6c1078a7",
+                      "bytes":  4127
+                  },
+                  {
+                      "path":  "scripts/evaluate_smolvla.py",
+                      "sha256":  "ebe6ef1192e971efe6d4fae1f3125456ce329e0784d3a914515e174531e7b8b4",
+                      "bytes":  26138
+                  },
+                  {
+                      "path":  "scripts/export_incident_report.py",
+                      "sha256":  "cc96e983af6cf6fccebf7bc64a22f8b03dc5ef5e604aea1f85d0f201a469dd1f",
+                      "bytes":  7069
+                  },
+                  {
+                      "path":  "scripts/generate_yolo_warehouse_dataset.py",
+                      "sha256":  "dd9fbb94a73e5ce3402a975e661bcf5d8e3efb5ec9581acd201891f55808ee7b",
+                      "bytes":  9034
+                  },
+                  {
+                      "path":  "scripts/inspect_architecture_a.py",
+                      "sha256":  "a6b2803ded0d8e640e0c4c8a55943597cd1650b2e9375d7bc026cb1a2e22041b",
+                      "bytes":  2595
+                  },
+                  {
+                      "path":  "scripts/inspect_b_multiview.py",
+                      "sha256":  "50f7b3e88d8a40482ac475f52d3db35401344e92dbb57ab4eb01562e324244c1",
+                      "bytes":  2894
+                  },
+                  {
+                      "path":  "scripts/install_lerobot_rocm.ps1",
+                      "sha256":  "97abc37a387fe54571d308a82971bffccd8e55201c49e0a11aaeb0f919a12f3d",
+                      "bytes":  2411
+                  },
+                  {
+                      "path":  "scripts/recover_python311.ps1",
+                      "sha256":  "381272d2f0337a080a79672dbdbd762553831048dd519020112f469093390bcf",
+                      "bytes":  2161
+                  },
+                  {
+                      "path":  "scripts/run_architecture_a_smolvla.ps1",
+                      "sha256":  "73b03f4af9db24824faa5a67b58418b719587e955357cda91210d8d18cbf83da",
+                      "bytes":  3664
+                  },
+                  {
+                      "path":  "scripts/run_comparison.py",
+                      "sha256":  "dc1659b11528cdd9ed43f45c60ff4270c0e7c424d72fa0543d1860d1e3bbbf57",
+                      "bytes":  5714
+                  },
+                  {
+                      "path":  "scripts/run_damage_comparison.ps1",
+                      "sha256":  "da8e7d34592cfd4b17ae461a0cdd2b4511e2dc00b9c6d1e54d6c2b3d3f136d1e",
+                      "bytes":  1019
+                  },
+                  {
+                      "path":  "scripts/run_obstacle_comparison.ps1",
+                      "sha256":  "5b95ae25d17d80b520ae9e291f8b1a7f7abc408f48e41f03ec68e479e2f26deb",
+                      "bytes":  1356
+                  },
+                  {
+                      "path":  "scripts/run_warehouse_scenario.py",
+                      "sha256":  "31d03fa66432df561c59a0a40e83d6c9f221cf7388eed1d34b54cde934319a63",
+                      "bytes":  16969
+                  },
+                  {
+                      "path":  "scripts/setup_nvidia_windows.ps1",
+                      "sha256":  "939c3450bd2315db3592ed4989cb066f6a56623c9a2e9242fc5800d8ea08dfc7",
+                      "bytes":  2202
+                  },
+                  {
+                      "path":  "scripts/setup_py312.ps1",
+                      "sha256":  "a50096b053704448527c77dd06a6a910d9f8cb431901eb3df04cedbd4ac86460",
+                      "bytes":  1344
+                  },
+                  {
+                      "path":  "scripts/setup_rocm_windows.ps1",
+                      "sha256":  "1ee584ba70fbcb6dfba652b65c2b19fe956f5907cee9fb2bcd4500654e36d5db",
+                      "bytes":  2323
+                  },
+                  {
+                      "path":  "scripts/train_smolvla.ps1",
+                      "sha256":  "9a64f6417ffa046cd357e16a9f9c63034ffb3167d082c46a9b82782e169e60e5",
+                      "bytes":  5125
+                  },
+                  {
+                      "path":  "scripts/train_warehouse_clip_prototypes.py",
+                      "sha256":  "e9a6e91aeee364844b8556866990110f96cc99570be72b126b5ad60dac1adbaf",
+                      "bytes":  2795
+                  },
+                  {
+                      "path":  "scripts/train_warehouse_yolo.py",
+                      "sha256":  "2fa22e2defdb5410c55a2693816be414689f9c639687b68eb8dbdb744a2cb0ff",
+                      "bytes":  1211
+                  },
+                  {
+                      "path":  "scripts/validate_warehouse_integration.py",
+                      "sha256":  "0b0eb99d120adf38030915e96624e195fee4075a114263667531ea0906a29a69",
+                      "bytes":  3714
+                  },
+                  {
+                      "path":  "src/architecture_a/action_safety.py",
+                      "sha256":  "bf82513e8e3f1ee256cb3856a48f31a2fece4f2eb8eeff10b76979b9916a14b2",
+                      "bytes":  2165
+                  },
+                  {
+                      "path":  "src/architecture_a/cli.py",
+                      "sha256":  "c13d4c2455b632d34fa8f817f91628dc0080996880184c9fb8b57441be989bfa",
+                      "bytes":  3120
+                  },
+                  {
+                      "path":  "src/architecture_a/contracts.py",
+                      "sha256":  "5f9da96d27e393ec878ffa0bdb7480fbc24264a27a3b21637373aea77e5510b6",
+                      "bytes":  1572
+                  },
+                  {
+                      "path":  "src/architecture_a/convert_lerobot.py",
+                      "sha256":  "2f48b83433bfa855b0f10843bbe489d6c9ab42b104809972b3bb6796a6487307",
+                      "bytes":  6528
+                  },
+                  {
+                      "path":  "src/architecture_a/demonstrations.py",
+                      "sha256":  "53d22454d610362f4a73ee99ef04bb5c1a2b2e198dfed119fcc02e71dd5bffd4",
+                      "bytes":  12425
+                  },
+                  {
+                      "path":  "src/architecture_a/inspection.py",
+                      "sha256":  "543eb97a4af9bb8d567adab80a9cfa693febbcb59087f3be509dc48a7641bb67",
+                      "bytes":  3329
+                  },
+                  {
+                      "path":  "src/architecture_a/mock.py",
+                      "sha256":  "3b7d833c54640edd3927bf689c0b63e4ed9efca81188c26ff37ae8dd5fd6807d",
+                      "bytes":  3944
+                  },
+                  {
+                      "path":  "src/architecture_a/mujoco_env.py",
+                      "sha256":  "99a8c68df619ee80f25bfa1b42a83d356a797b8a99c9d2061228bff655ef1654",
+                      "bytes":  9804
+                  },
+                  {
+                      "path":  "src/architecture_a/pybullet_env.py",
+                      "sha256":  "54c2f7ccce0694c6dbe44601de0f07458229af56769cde54142cbd70f53f5b42",
+                      "bytes":  8200
+                  },
+                  {
+                      "path":  "src/architecture_a/runner.py",
+                      "sha256":  "87e006fab71d0a9bd6eb13610b605f1038cb2096324f20798bcdc0fb598f8792",
+                      "bytes":  2736
+                  },
+                  {
+                      "path":  "src/architecture_a/semantic_executor.py",
+                      "sha256":  "556dd6e8bc5ab050b13538bd9c22b7576359a5ffdc7dcec34a0f72d7bc453ea3",
+                      "bytes":  5022
+                  },
+                  {
+                      "path":  "src/architecture_a/smolvla_adapter.py",
+                      "sha256":  "50bde3a33d4fe14c4302cd3116f3435f262ed64ddc13c8ae6af42bef321efc90",
+                      "bytes":  4298
+                  },
+                  {
+                      "path":  "src/architecture_a/so101_env.py",
+                      "sha256":  "bdc227bb1d7c2461a9468b81f7a67ae747e2ebd5a5a984885a47015f001f6edd",
+                      "bytes":  47377
+                  },
+                  {
+                      "path":  "src/architecture_a/vla_confidence.py",
+                      "sha256":  "888405ce1d62233e41bfa96e4be7dbb79b474a3428bcf31c89c6cce0dc435364",
+                      "bytes":  1977
+                  },
+                  {
+                      "path":  "src/architecture_a/__init__.py",
+                      "sha256":  "d71ad2ecd8fb22ff6ce083871e8d3c6cf982bba38ef861215cd2ddc097babd0d",
+                      "bytes":  262
+                  },
+                  {
+                      "path":  "src/architecture_b/channel.py",
+                      "sha256":  "2dbdefe810e96ceab8ca42c1342c044d43c43345b7d2aca3e8334dd4da46c5f5",
+                      "bytes":  4077
+                  },
+                  {
+                      "path":  "src/architecture_b/controller.py",
+                      "sha256":  "35c945626d6c849ef655bca1ea3bdac1011aceccb35e7cd4b79ef68d3e0591a3",
+                      "bytes":  5179
+                  },
+                  {
+                      "path":  "src/architecture_b/payload.py",
+                      "sha256":  "d06ed2fde1758e886644a568c29e363c3d106c01068f520edd116db6fc0fcef4",
+                      "bytes":  7747
+                  },
+                  {
+                      "path":  "src/architecture_b/planner.py",
+                      "sha256":  "7eccde800ce42b102283dbd89b47cfbb73a63d1a98d78f49ed4ae19fe13d1bfc",
+                      "bytes":  9896
+                  },
+                  {
+                      "path":  "src/architecture_b/runner.py",
+                      "sha256":  "5fc6c52c38827e71b93eacab4829adb35610397d1cc215d6a82aaef7393d5dee",
+                      "bytes":  13900
+                  },
+                  {
+                      "path":  "src/architecture_b/service.py",
+                      "sha256":  "6f044c0f303ec66a6c44571883234962f264c47f2efda09cfa671037aaf5c58c",
+                      "bytes":  8927
+                  },
+                  {
+                      "path":  "src/architecture_b/__init__.py",
+                      "sha256":  "d664deea06a30d913c1878b1ab3b3ec8e66c11a92d6608ec8c776f02021d3469",
+                      "bytes":  946
+                  },
+                  {
+                      "path":  "src/architecture_c/router.py",
+                      "sha256":  "5ff211b9a782bcaeb0c0f6b369da51ffc8e69213c5871a8846f39ed7beac34f4",
+                      "bytes":  4039
+                  },
+                  {
+                      "path":  "src/architecture_c/runner.py",
+                      "sha256":  "17025a577fb7d768a9d2da4a638553f87aeb86db0b6f954bab2d3bb7bc8b845c",
+                      "bytes":  20578
+                  },
+                  {
+                      "path":  "src/architecture_c/__init__.py",
+                      "sha256":  "a5a03998bf319083fee04df61ad71a899bd2630f88f5085b4da2a306ef36dfd2",
+                      "bytes":  635
+                  },
+                  {
+                      "path":  "src/edge_vla_architecture_a.egg-info/dependency_links.txt",
+                      "sha256":  "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b",
+                      "bytes":  1
+                  },
+                  {
+                      "path":  "src/edge_vla_architecture_a.egg-info/entry_points.txt",
+                      "sha256":  "9dcf6cde0ef33451c1a518497efe84c457caee2a127622d6ef6b77c172d86272",
+                      "bytes":  63
+                  },
+                  {
+                      "path":  "src/edge_vla_architecture_a.egg-info/PKG-INFO",
+                      "sha256":  "cb4f99fdfd7788dcaa357eeb131aebae2a8afe706bdf3f1ebfa6a2d635e5cbcf",
+                      "bytes":  850
+                  },
+                  {
+                      "path":  "src/edge_vla_architecture_a.egg-info/requires.txt",
+                      "sha256":  "11c15253ef56b26ab3fa4e798aa0f903b48bb2ef0533129ef6482083d4d7f2db",
+                      "bytes":  279
+                  },
+                  {
+                      "path":  "src/edge_vla_architecture_a.egg-info/SOURCES.txt",
+                      "sha256":  "1aa32605e18ef477e3ca4cb23445bebaba2e5dce4c853f48e8920d6acdc533c9",
+                      "bytes":  1727
+                  },
+                  {
+                      "path":  "src/edge_vla_architecture_a.egg-info/top_level.txt",
+                      "sha256":  "af29768dd90cccb07805919d1eab6f51088619ac43226e84251383941ac5b6ef",
+                      "bytes":  52
+                  },
+                  {
+                      "path":  "src/shared/destinations.py",
+                      "sha256":  "939f78e44421397ee0229550bacf499c0a33e8c518bb3bb33911d0d3841ef35c",
+                      "bytes":  1271
+                  },
+                  {
+                      "path":  "src/shared/handoff.py",
+                      "sha256":  "9908d9c3e905adf37d1227ed921ed8ae0de0dc566846ce109335c82791228b83",
+                      "bytes":  5407
+                  },
+                  {
+                      "path":  "src/shared/instructions.py",
+                      "sha256":  "0a971f449f2730e03124a1ce859f28bbc002e5a3e8a806a25466b37e24ef0f08",
+                      "bytes":  960
+                  },
+                  {
+                      "path":  "src/shared/metrics.py",
+                      "sha256":  "d2e701abc4d25ef5b841b9033879543852446781aab4ac2c1790b666175ff27b",
+                      "bytes":  4722
+                  },
+                  {
+                      "path":  "src/shared/smolvla_runtime.py",
+                      "sha256":  "8d8a08b4681a6ca565be4b767aaef0f372f7be00981af45e289b59e39641205e",
+                      "bytes":  6965
+                  },
+                  {
+                      "path":  "src/shared/__init__.py",
+                      "sha256":  "f1dd04e45209feb26b98d19b99f1e8d538e67af7a9515fa8a2676d354056da30",
+                      "bytes":  396
+                  },
+                  {
+                      "path":  "src/shared/environments/so101.py",
+                      "sha256":  "0cfd8e4cfcd775dd5928499ac189d7a62f9f06ec54a36e949d46a5104dd9c6fa",
+                      "bytes":  174
+                  },
+                  {
+                      "path":  "src/shared/environments/__init__.py",
+                      "sha256":  "76de51526d8052cda3ba80b69cf746280e231c37f3248d7654e7bdf85efec587",
+                      "bytes":  80
+                  },
+                  {
+                      "path":  "src/shared/perception/clip_grounding.py",
+                      "sha256":  "24420776163bb07ef983634088559e23cc42040fa8c13f899a057c5367e75da7",
+                      "bytes":  6699
+                  },
+                  {
+                      "path":  "src/shared/perception/detector.py",
+                      "sha256":  "b5696cde9b7c5214abaf69c716ef80338cb2896f79a06a81f248868deb8f3c4b",
+                      "bytes":  7000
+                  },
+                  {
+                      "path":  "src/shared/perception/scene_graph.py",
+                      "sha256":  "ee2a00a114324f7971cdc412854ad2678541f7fd3e8024c89ebdf0e98bafec71",
+                      "bytes":  5261
+                  },
+                  {
+                      "path":  "src/shared/perception/warehouse_clip.py",
+                      "sha256":  "c802ea3117066de84784ad57be9390830876deba532b3fd8a1a0acd5ef5b0f34",
+                      "bytes":  2973
+                  },
+                  {
+                      "path":  "src/shared/perception/__init__.py",
+                      "sha256":  "70abf4b5e7b4073c7e06f799444554ab2341f0b7e11713b7d5571edb94ccac0d",
+                      "bytes":  925
+                  },
+                  {
+                      "path":  "src/shared/robots/so101_adapter.py",
+                      "sha256":  "20a0138cdeb699cef2bd6dd58826a3ded61b2f3a24f13ca8a7a33a66bba71a8c",
+                      "bytes":  3891
+                  },
+                  {
+                      "path":  "src/shared/robots/so101_controller.py",
+                      "sha256":  "3777d84d40a61507d1efa4200e67afac1c95a90c7bf2cc00c7a2beb6c4104c6d",
+                      "bytes":  2923
+                  },
+                  {
+                      "path":  "src/shared/robots/so101_observation.py",
+                      "sha256":  "b976c9f2b41a06560f5bce44b8cfd0e7cd84eac8a441988f474d141b0fa16f90",
+                      "bytes":  3250
+                  },
+                  {
+                      "path":  "src/shared/robots/__init__.py",
+                      "sha256":  "d5e626327c732efa10095ba4987415178a8afc78654d26c7cfa318312942ebac",
+                      "bytes":  479
+                  },
+                  {
+                      "path":  "tests/test_architecture_a.py",
+                      "sha256":  "31b66287f19a7279f4a20eb9b2bd9cd9c1a3406a7f5b7b44d839d39d73c62626",
+                      "bytes":  19853
+                  },
+                  {
+                      "path":  "tests/test_architecture_a_inspection.py",
+                      "sha256":  "9137273f001b0bc2e19078fbc65d9bc464b39448477610c1a2347dabd0e9dfcc",
+                      "bytes":  2128
+                  },
+                  {
+                      "path":  "tests/test_architecture_b.py",
+                      "sha256":  "f2582d30ac39861db346fe485e21600836b57d101550f42eec9e6ca89f5241c9",
+                      "bytes":  13641
+                  },
+                  {
+                      "path":  "tests/test_architecture_c.py",
+                      "sha256":  "d0db92fbba79faae567e25553c3b5cd7a10238c0c44b0b327d83a89c1089cdbf",
+                      "bytes":  14633
+                  },
+                  {
+                      "path":  "tests/test_channel.py",
+                      "sha256":  "45b3ea249f41caa98395f60491fb2cc8a915833bcb12dc5c01e872d81d59c5a5",
+                      "bytes":  1486
+                  },
+                  {
+                      "path":  "tests/test_comparison.py",
+                      "sha256":  "e8a0fcea63ea67eefccd7317e430f7cb25c906286e35456a9d107c38d4c65a57",
+                      "bytes":  3536
+                  },
+                  {
+                      "path":  "tests/test_handoff.py",
+                      "sha256":  "2efdea6815e71e43bcd2cb5542c2d1a6833030b4324bb1da0828704dd6925441",
+                      "bytes":  3520
+                  },
+                  {
+                      "path":  "tests/test_perception.py",
+                      "sha256":  "ced0868982fe3eef2fab4c8f37eda51880d349c9587d3450a141abc7ef9674cf",
+                      "bytes":  6980
+                  },
+                  {
+                      "path":  "tests/test_semantic_executor.py",
+                      "sha256":  "77cceb1121f5e4a1adbd5244f03348756cfabdd070bc676628a13f336a98a88c",
+                      "bytes":  2844
+                  }
+              ]
+}

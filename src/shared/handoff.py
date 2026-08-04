@@ -8,9 +8,10 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 from uuid import uuid4
 
+from .destinations import DESTINATIONS, normalize_destination
+
 REQUEST_SCHEMA = "architecture_a_to_b/v1"
 RESPONSE_SCHEMA = "architecture_b_to_a/v1"
-DESTINATIONS = frozenset(("conveyor", "left_tray", "right_tray"))
 
 
 class RecoveryCommand(str, Enum):
@@ -86,11 +87,12 @@ def validate_recovery_response(
     confidence = float(response.get("confidence", -1.0))
     if not 0.0 <= confidence <= 1.0:
         raise ValueError("Recovery confidence must be between 0 and 1.")
-    destination = response.get("destination")
+    raw_destination = response.get("destination")
+    destination = normalize_destination(raw_destination)
     if command is RecoveryCommand.REROUTE:
-        if destination not in DESTINATIONS:
+        if destination not in DESTINATIONS or destination == "outbound_bin":
             raise ValueError("REROUTE requires a known destination.")
-    elif destination is not None:
+    elif raw_destination is not None:
         raise ValueError(f"{command.value} must not include a destination.")
     problem = request["task_state"].get("problem")
     if problem == "unexpected_obstacle" and command is not RecoveryCommand.STOP:
@@ -98,8 +100,8 @@ def validate_recovery_response(
     if problem == "package_damaged" and destination == "conveyor":
         raise ValueError("A damaged package cannot be rerouted to the conveyor.")
     if problem == "barcode_missing" and command is RecoveryCommand.REROUTE:
-        if destination != "left_tray":
-            raise ValueError("A missing barcode must be rerouted to left_tray.")
+        if destination != "inspection_tray":
+            raise ValueError("A missing barcode must be rerouted to inspection_tray.")
     return ValidatedRecovery(command, reason.strip(), destination, confidence)
 
 

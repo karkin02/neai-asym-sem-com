@@ -10,7 +10,14 @@ from .channel import CLEAN, DEGRADED, ChannelConfig, ChannelSimulator, get_chann
 from .controller import ScriptedController
 from .payload import CompressionLevel, Payload, build_payload
 from .planner import ActionTarget, GptPlanner, HeuristicPlanner, get_planner
-from .runner import run_trial
+
+
+def __getattr__(name: str):
+    if name == "run_trial":
+        from .runner import run_trial
+
+        return run_trial
+    raise AttributeError(name)
 
 __all__ = [
     "CLEAN",

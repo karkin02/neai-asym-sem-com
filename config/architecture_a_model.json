@@ -2,21 +2,88 @@
   "model": "smolvla",
   "status": "selected",
   "checkpoint": "outputs/train/smolvla_pickplace_50/checkpoints/last/pretrained_model",
+  "warehouse_layout": "v3",
+  "warehouse_yolo_weights": "outputs/train/warehouse_yolov8n_v9_single_wrist_damage_balanced/weights/best.pt",
+  "warehouse_perception_calibration": {
+    "camera": "wrist",
+    "barcode_threshold": 0.5,
+    "damage_threshold": 0.45,
+    "barcode_present": "20/20",
+    "barcode_missing_false_positives": "0/20",
+    "damage_present": "20/20 with YOLO-grounded saturated-red stripe verifier",
+    "damage_false_positives": "0/60 including obstacle scenes",
+    "policy": "No detection or sub-threshold evidence escalates; it is never forced into a route."
+  },
   "scenario_checkpoints": {
     "warehouse_normal": {
-      "checkpoint": "outputs/train/warehouse200/checkpoints/001500/pretrained_model",
-      "status": "warehouse_specialist",
+      "checkpoint": "outputs/train/warehouse_v3_150/checkpoints/002000/pretrained_model",
+      "status": "warehouse_v3_specialist",
       "benchmark": {
-        "device": "cpu",
-        "seed_start": 1010,
+        "device": "cuda",
+        "seed_start": 40000,
         "episodes": 20,
-        "successes": 11,
-        "success_rate": 0.55,
-        "baseline_successes": 8,
-        "baseline_success_rate": 0.4
+        "successes": 20,
+        "success_rate": 1.0,
+        "visual_routes_correct": 20,
+        "visual_route_accuracy": 1.0
       },
-      "selection_reason": "Best warehouse-normal result; safely stopped the protected obstacle, but remains isolated because general pick-place scored 9/20."
+      "selection_reason": "Validated v3 conveyor result using active YOLO v9 single-wrist visual routing and bounded physical-limit clipping."
+    },
+    "barcode_missing": {
+      "checkpoint": "outputs/train/warehouse_v3_150/checkpoints/002000/pretrained_model",
+      "status": "warehouse_v3_specialist",
+      "benchmark": {
+        "device": "cuda",
+        "seed_start": 50000,
+        "episodes": 20,
+        "successes": 18,
+        "success_rate": 0.9,
+        "visual_routes_correct": 20,
+        "visual_route_accuracy": 1.0
+      },
+      "selection_reason": "Validated v3 inspection result; YOLO v9 barcode absence selected the destination from the original wrist camera without scenario metadata."
+    },
+    "package_damaged": {
+      "checkpoint": "outputs/train/warehouse_v3_150/checkpoints/002000/pretrained_model",
+      "status": "warehouse_v3_specialist",
+      "benchmark": {
+        "device": "cuda",
+        "seed_start": 60000,
+        "episodes": 20,
+        "successes": 18,
+        "success_rate": 0.9,
+        "visual_routes_correct": 20,
+        "visual_route_accuracy": 1.0
+      },
+      "selection_reason": "Validated v3 rejection result; YOLO v9 package grounding plus the calibrated visual stripe verifier selected the destination without scenario metadata."
     }
+  },
+  "warehouse_benchmark": {
+    "checkpoint": "outputs/train/warehouse_v3_150/checkpoints/002000/pretrained_model",
+    "episodes": 60,
+    "successes": 56,
+    "success_rate": 0.9333333333,
+    "visual_routes_correct": 60,
+    "visual_route_accuracy": 1.0,
+    "safety_policy": "Small model overshoots are clipped to physical limits, then forward collision simulated; material violations still stop and escalate."
+  },
+  "previous_warehouse_benchmark": {
+    "layout": "v1",
+    "checkpoint": "outputs/train/warehouse_visual_multidestination_150/checkpoints/003000/pretrained_model",
+    "episodes": 60,
+    "successes": 35,
+    "success_rate": 0.5833333333,
+    "visual_routes_correct": 60,
+    "visual_route_accuracy": 1.0
+  },
+  "previous_v2b_warehouse_benchmark": {
+    "layout": "v2",
+    "checkpoint": "outputs/train/warehouse_v2b_150/checkpoints/002000/pretrained_model",
+    "episodes": 60,
+    "successes": 55,
+    "success_rate": 0.9166666667,
+    "visual_routes_correct": 60,
+    "visual_route_accuracy": 1.0
   },
   "execution_mode": "open_loop",
   "max_steps": 50,

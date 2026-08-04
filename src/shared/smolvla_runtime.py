@@ -23,7 +23,7 @@ import numpy as np
 
 # Mirror scripts/evaluate_smolvla.py defaults.
 DEFAULT_CHECKPOINT = Path("outputs/train/smolvla_pickplace_50/checkpoints/last/pretrained_model")
-DEFAULT_VLM = Path(".hf-cache/checkpoints/smolvlm2_500m_video_instruct")
+DEFAULT_VLM = "HuggingFaceTB/SmolVLM2-500M-Video-Instruct"
 
 
 class ChunkPredictor(Protocol):
@@ -46,12 +46,15 @@ class SmolVlaRuntime:
     def __init__(
         self,
         checkpoint: Path = DEFAULT_CHECKPOINT,
-        vlm: Path = DEFAULT_VLM,
+        vlm: str | Path = DEFAULT_VLM,
         device: str = "cpu",
         predictor: Optional[ChunkPredictor] = None,
     ) -> None:
         self.checkpoint = Path(checkpoint)
-        self.vlm = Path(vlm)
+        # Keep Hub model IDs as POSIX-style strings on Windows. Converting a
+        # model ID to Path would produce backslashes and make Transformers
+        # reject it as an invalid repository name.
+        self.vlm = str(vlm)
         self.device = device
         self._predictor = predictor
 
@@ -69,29 +72,44 @@ class SmolVlaRuntime:
         chunk = self._ensure_predictor().predict_chunk(overhead, wrist, robot_state, instruction)
         return np.asarray(chunk, dtype=float)
 
+    def reset(self, seed: int) -> None:
+        """Reset stochastic policy state for a reproducible episode."""
+        predictor = self._ensure_predictor()
+        reset = getattr(predictor, "reset", None)
+        if callable(reset):
+            reset(seed)
 
-def rollout_chunk(env: Any, chunk: np.ndarray, max_steps: int = 50) -> tuple[bool, int, dict]:
+
+def rollout_chunk(
+    env: Any, chunk: np.ndarray, max_steps: int = 50, on_step: Any | None = None
+) -> tuple[bool, int, dict, Any | None]:
     """Execute a chunk open-loop through A's env (reuses ``env.step``).
 
     One chunk row per step, stopping on success/termination. Returns
-    ``(success, steps, final_info)``. This only changes *where* the action came
-    from (SmolVLA); physical execution is entirely A's ``env.step``.
+    ``(success, steps, final_info, final_observation)``. This only changes
+    *where* the action came from (SmolVLA); physical execution is entirely A's
+    ``env.step``. Returning the observation permits bounded closed-loop
+    replanning without reaching into an environment's private state.
     """
     from architecture_b.controller import JointAction  # duck-typed Action(name, values)
 
     success = False
     steps = 0
     info: dict = {}
+    observation = None
     for row in np.asarray(chunk)[:max_steps]:
         result = env.step(JointAction(values=tuple(float(v) for v in row)))
+        if on_step is not None:
+            on_step()
         steps += 1
+        observation = getattr(result, "observation", observation)
         info = dict(getattr(result, "info", {}) or {})
         if info.get("success"):
             success = True
             break
         if getattr(result, "terminated", False) or getattr(result, "truncated", False):
             break
-    return success, steps, info
+    return success, steps, info, observation
 
 
 def _image_tensor(image: np.ndarray, torch: Any):
@@ -108,7 +126,7 @@ def _image_tensor(image: np.ndarray, torch: Any):
 class _LeRobotSmolVlaPredictor:
     """Default predictor: replicates A's evaluate_smolvla load + predict_action_chunk."""
 
-    def __init__(self, checkpoint: Path, vlm: Path, device: str) -> None:
+    def __init__(self, checkpoint: Path, vlm: str, device: str) -> None:
         import torch  # lazy
         import truststore  # lazy
 
@@ -132,9 +150,17 @@ class _LeRobotSmolVlaPredictor:
             },
         )
         self._torch = torch
+        self.device = device
         self._policy = policy
         self._pre = preprocessor
         self._post = postprocessor
+
+    def reset(self, seed: int) -> None:
+        np.random.seed(seed)
+        self._torch.manual_seed(seed)
+        if self.device.startswith("cuda"):
+            self._torch.cuda.manual_seed_all(seed)
+        self._policy.reset()
 
     def predict_chunk(self, overhead, wrist, robot_state, instruction: str) -> np.ndarray:
         torch = self._torch

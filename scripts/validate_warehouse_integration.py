@@ -11,8 +11,8 @@ from typing import Any, Mapping
 
 EXPECTATIONS: dict[str, dict[str, Any]] = {
     "warehouse_normal": {"destination": "conveyor", "routed": True, "shipment_complete": True},
-    "barcode_missing": {"destination": "left_tray", "routed": True},
-    "package_damaged": {"destination": "right_tray", "routed": True},
+    "barcode_missing": {"destination": "inspection_tray", "routed": True},
+    "package_damaged": {"destination": "rejection_tray", "routed": True},
     "unexpected_obstacle": {
         "outcome": "llm_escalation_requested",
         "joint_commands_executed": 0,
@@ -47,11 +47,21 @@ def main() -> None:
         default=Path("outputs/warehouse_validation")
         / datetime.now().strftime("%Y%m%d-%H%M%S"),
     )
+    parser.add_argument(
+        "--warehouse-layout",
+        choices=("v1", "v2", "v3"),
+        default="v3",
+        help="Versioned warehouse geometry exercised by every scenario.",
+    )
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     runner = root / "scripts" / "run_warehouse_scenario.py"
     args.output.mkdir(parents=True, exist_ok=False)
-    report: dict[str, Any] = {"schema": "warehouse_validation/v1", "scenarios": {}}
+    report: dict[str, Any] = {
+        "schema": "warehouse_validation/v1",
+        "warehouse_layout": args.warehouse_layout,
+        "scenarios": {},
+    }
 
     for scenario, expected in EXPECTATIONS.items():
         scenario_dir = args.output / scenario
@@ -62,6 +72,8 @@ def main() -> None:
                 "--scenario",
                 scenario,
                 "--headless",
+                "--warehouse-layout",
+                args.warehouse_layout,
                 "--output-dir",
                 str(scenario_dir),
             ],
