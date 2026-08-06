@@ -79,7 +79,7 @@ def main() -> None:
         help="Record the original close angled observer view for every frame.",
     )
     parser.add_argument("--planner", choices=("gpt", "heuristic"), default="gpt")
-    parser.add_argument("--channel", choices=("clean", "degraded"), default="clean")
+    parser.add_argument("--channel", choices=("clean", "throttled", "restricted", "delayed", "degraded", "practical", "stressed", "extreme", "level1", "level2", "level3", "level4", "level5"), default="clean")
     parser.add_argument("--compression", choices=[item.value for item in CompressionLevel], default="scene_graph")
     parser.add_argument("--warehouse-layout", choices=("v1", "v2", "v3"), default="v3")
     parser.add_argument("--device", default="cuda")

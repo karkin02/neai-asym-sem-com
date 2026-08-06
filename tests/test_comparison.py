@@ -1,4 +1,4 @@
-"""Unit tests for the A/B/C comparison merger (scripts/run_comparison.py)."""
+"""Unit tests for the archived A/B/C comparison merger."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from tempfile import TemporaryDirectory
 
 from shared.metrics import TrialRecord, write_metrics
 
-_SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "run_comparison.py"
+_SCRIPT = Path(__file__).resolve().parent.parent / "scripts" / "archive" / "run_comparison.py"
 _spec = importlib.util.spec_from_file_location("run_comparison", _SCRIPT)
 run_comparison = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(run_comparison)

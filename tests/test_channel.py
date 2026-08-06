@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unittest
 
-from architecture_b.channel import CLEAN, ChannelConfig, ChannelSimulator, get_channel
+from architecture_b.channel import CLEAN, EXTREME, PRACTICAL, RESTRICTED, STRESSED, THROTTLED, ChannelConfig, ChannelSimulator, get_channel
 
 
 class ChannelTest(unittest.TestCase):
@@ -32,6 +32,35 @@ class ChannelTest(unittest.TestCase):
     def test_get_channel_rejects_unknown(self):
         with self.assertRaises(ValueError):
             get_channel("teleport")
+
+    def test_throttled_preset_limits_bandwidth_without_drops(self):
+        sim = get_channel("throttled", seed=0)
+        result = sim.transmit(125_000)
+        self.assertEqual(sim.config, THROTTLED)
+        self.assertTrue(result.delivered)
+        self.assertFalse(result.dropped)
+        self.assertAlmostEqual(result.latency_seconds, 25.30)
+
+    def test_restricted_preset_is_bandwidth_bound(self):
+        result = get_channel("restricted", seed=0).transmit(5_000)
+        self.assertEqual(get_channel("restricted").config, RESTRICTED)
+        self.assertTrue(result.delivered)
+        self.assertAlmostEqual(result.latency_seconds, 2.30)
+
+    def test_combined_threshold_profiles(self):
+        self.assertEqual(get_channel("practical").config, PRACTICAL)
+        self.assertEqual(get_channel("stressed").config, STRESSED)
+        self.assertEqual(get_channel("extreme").config, EXTREME)
+        self.assertEqual(PRACTICAL.bandwidth_bytes_per_sec, 5_000.0)
+        self.assertEqual(STRESSED.latency_seconds, 6.0)
+        self.assertEqual(EXTREME.drop_probability, 0.50)
+        ladder = [get_channel(f"level{i}").config for i in range(1, 6)]
+        self.assertEqual([item.bandwidth_bytes_per_sec for item in ladder],
+                         [125_000.0, 20_000.0, 5_000.0, 3_000.0, 2_500.0])
+        self.assertEqual([item.latency_seconds for item in ladder],
+                         [0.50, 1.0, 2.0, 4.0, 6.0])
+        self.assertEqual([item.drop_probability for item in ladder],
+                         [0.0, 0.05, 0.10, 0.30, 0.50])
 
 
 if __name__ == "__main__":

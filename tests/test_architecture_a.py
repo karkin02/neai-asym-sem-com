@@ -424,6 +424,97 @@ class ArchitectureATest(unittest.TestCase):
         finally:
             environment.close()
 
+    def test_inbound_feeder_reverses_along_semicircle(self) -> None:
+        from architecture_a.so101_env import SO101MuJoCoEnvironment
+
+        environment = SO101MuJoCoEnvironment(
+            gui=False,
+            realtime=False,
+            observation_images=False,
+            scenario="warehouse_normal",
+            warehouse_layout="v3",
+            inbound_feeder=True,
+        )
+        try:
+            observation = environment.reset(seed=1001, instruction="Intercept the moving package.")
+            start = environment.sample_position.copy()
+            self.assertLess(start[0], -0.11)
+            self.assertGreater(start[1], -0.055)
+            self.assertAlmostEqual(start[2], 0.10, places=3)
+
+            environment.advance_idle(16.0)
+            apex = environment.sample_position.copy()
+            self.assertLess(abs(apex[0]), 0.08)
+            self.assertGreater(apex[1], 0.03)
+
+            environment.advance_idle(15.7)
+            exit_position = environment.sample_position.copy()
+            self.assertGreater(exit_position[0], 0.11)
+            self.assertGreater(exit_position[1], -0.055)
+            environment.advance_idle(31.7)
+            returned = environment.sample_position.copy()
+            self.assertLess(returned[0], -0.11)
+            self.assertGreater(returned[1], -0.055)
+            self.assertEqual(observation.metadata["target_name"], "conveyor")
+        finally:
+            environment.close()
+
+    def test_inbound_feeder_is_opt_in(self) -> None:
+        from architecture_a.so101_env import SO101MuJoCoEnvironment
+
+        environment = SO101MuJoCoEnvironment(
+            gui=False,
+            realtime=False,
+            observation_images=False,
+            scenario="warehouse_normal",
+            inbound_feeder=False,
+        )
+        try:
+            environment.reset(seed=1001, instruction="")
+            for index in range(1, 13):
+                self.assertEqual(
+                    environment._model.geom(f"feeder_segment_{index}").rgba[3],
+                    0.0,
+                )
+        finally:
+            environment.close()
+
+    def test_robot_intercepts_feeder_package_and_completes_sort(self) -> None:
+        from architecture_a.contracts import Action
+        from architecture_a.so101_env import SO101MuJoCoEnvironment
+
+        environment = SO101MuJoCoEnvironment(
+            gui=False,
+            realtime=False,
+            observation_images=False,
+            kinematic_control=True,
+            scenario="warehouse_normal",
+            warehouse_layout="v3",
+            inbound_feeder=True,
+        )
+
+        def move_to(position: np.ndarray, gripper: float):
+            joints = environment.solve_ik(position, gripper=gripper)
+            return environment.step(Action("joint_position", tuple(joints)))
+
+        try:
+            environment.reset(seed=1001, instruction="Intercept and sort package.")
+            environment.advance_idle(17.0)
+            for height in (0.12, 0.045, 0.015):
+                move_to(environment.sample_position + (0.0, 0.0, height), 0.020)
+            grasp = move_to(environment.sample_position + (0.0, 0.0, 0.015), 0.002)
+            self.assertTrue(grasp.observation.metadata["held_object"])
+
+            move_to(environment.sample_position + (0.0, 0.0, 0.16), 0.002)
+            destination = environment.CONVEYOR_POSITION.copy()
+            move_to(destination + (0.0, 0.0, 0.16), 0.002)
+            move_to(destination + (0.0, 0.0, 0.025), 0.002)
+            released = move_to(destination + (0.0, 0.0, 0.025), 0.020)
+            self.assertTrue(released.info["success"])
+            self.assertGreater(environment.sample_position[1], 0.25)
+        finally:
+            environment.close()
+
     def test_warehouse_obstacle_stops_local_execution(self) -> None:
         from architecture_a.so101_env import SO101MuJoCoEnvironment
 

@@ -41,11 +41,31 @@ from architecture_b.payload import (
     build_payload,
     visual_observations_for_views,
 )
-from architecture_b.planner import Planner, get_planner
+from architecture_b.planner import ActionTarget, Planner, get_planner
 
-from .router import RoutingConfig, decide_route
+from .router import RouteDecision, RoutingConfig, decide_route
 
 DEFAULT_INSTRUCTION = "Pick up the sample and place it in the left tray."
+
+
+def _save_mp4(frames: Sequence[Any], path: Path, fps: int) -> None:
+    """Encode RGB replay frames as an MP4 file."""
+    if not frames:
+        return
+    import cv2
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    height, width = frames[0].shape[:2]
+    writer = cv2.VideoWriter(
+        str(path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height)
+    )
+    if not writer.isOpened():
+        raise RuntimeError(f"Could not open MP4 encoder for {path}")
+    try:
+        for frame in frames:
+            writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+    finally:
+        writer.release()
 
 
 def checkpoint_for_scene(
@@ -93,13 +113,21 @@ def run_trial(
     frame_size: tuple[int, int] = (320, 240),
     max_local_steps: int = 50,
     max_local_attempts: int = 2,
+    max_frame_attempts: int = 3,
+    advance_world_during_network: bool = False,
+    initial_world_delay: float = 0.0,
     demo_frames: list[Any] | None = None,
 ) -> TrialRecord:
     """Run one Architecture C trial and return an A-comparable record."""
     width, height = frame_size
     start = time.perf_counter()
 
+    def measured_latency() -> float:
+        return (time.perf_counter() - start) + (0.0 if channel.realtime else channel_latency)
+
     observation = env.reset(seed=seed, instruction=instruction)
+    if initial_world_delay > 0 and callable(getattr(env, "advance_idle", None)):
+        env.advance_idle(initial_world_delay)
     condition_gate_failed = False
     condition_detections = None
     if (
@@ -115,12 +143,14 @@ def run_trial(
             condition_gate_failed = True
         else:
             instruction = inspection.instruction
-            observation = env.reset(seed=seed, instruction=instruction)
     if demo_frames is not None:
         demo_frames.append(env.capture_rgb(camera="observer", width=480, height=360))
     overhead = env.capture_rgb(camera="overhead", width=width, height=height)
 
     overhead_detections = detector.detect(overhead)
+    visual_observer = getattr(controller, "observe_visual", None)
+    if callable(visual_observer):
+        visual_observer(overhead_detections, camera="overhead", width=width, height=height)
     scene_graph = build_scene_graph(overhead_detections, width, height, task=instruction)
     if condition_detections is not None:
         scene_graph["visual_observations"] = visual_observations_for_views(
@@ -164,6 +194,18 @@ def run_trial(
         clip_margin=clip_margin,
         perception_valid=perception_valid,
     )
+    if bool(getattr(env, "inbound_feeder_enabled", False)) and decision.route == "local":
+        decision = RouteDecision(
+            route="escalate",
+            escalated=True,
+            recognized=decision.recognized,
+            clip_ok=decision.clip_ok,
+            clip_confidence=decision.clip_confidence,
+            reason=(
+                f"{decision.reason}; moving feeder is outside the stationary "
+                "local-policy training distribution"
+            ),
+        )
 
     record = TrialRecord(
         architecture="C",
@@ -284,21 +326,48 @@ def run_trial(
         reason = f"{reason or 'gate=local'}; local runtime unavailable -> escalated"
 
     payload = build_payload(compression_level, scene_graph, instruction, frame=overhead)
-    transmission = channel.transmit(payload.num_bytes)
+    transmitted_bytes = payload.num_bytes
+    dropped_frames = 0
+    channel_latency = 0.0
+    for frame_attempt in range(1, max(1, max_frame_attempts) + 1):
+        transmission = channel.transmit(payload.num_bytes)
+        if advance_world_during_network and callable(getattr(env, "advance_idle", None)):
+            env.advance_idle(transmission.latency_seconds)
+        channel_latency += transmission.latency_seconds
+        note_latency = getattr(controller, "note_link_latency", None)
+        if transmission.delivered and callable(note_latency):
+            note_latency(transmission.latency_seconds)
+        if transmission.delivered:
+            break
+        dropped_frames += 1
+        if frame_attempt < max(1, max_frame_attempts):
+            overhead = env.capture_rgb(camera="overhead", width=width, height=height)
+            overhead_detections = detector.detect(overhead)
+            if callable(visual_observer):
+                visual_observer(overhead_detections, camera="overhead", width=width, height=height)
+            scene_graph = build_scene_graph(overhead_detections, width, height, task=instruction)
+            if condition_detections is not None:
+                scene_graph["visual_observations"] = visual_observations_for_views(
+                    condition_detections
+                )
+            payload = build_payload(compression_level, scene_graph, instruction, frame=overhead)
+            transmitted_bytes += payload.num_bytes
     record.escalated = True
     record.route = "escalated"
-    record.network_payload_bytes = payload.num_bytes
+    record.network_payload_bytes = transmitted_bytes
     record.channel_condition = transmission.condition
     record.compression_level = str(payload.level.value)
     record.extra.update({
         "routing_reason": reason,
         "clip_margin": clip_margin,
         "perception_view": perception_view,
+        "frame_attempts": frame_attempt,
+        "dropped_frames": dropped_frames,
     })
 
     if not transmission.delivered:
         record.failure_reason = "channel_drop"
-        record.latency_seconds = (time.perf_counter() - start) + transmission.latency_seconds
+        record.latency_seconds = measured_latency()
         return record
 
     # An obstacle escalation enters a stationary hold before becoming a final
@@ -319,7 +388,7 @@ def run_trial(
         record.success = True
         record.steps = 0
         record.failure_reason = None
-        record.latency_seconds = (time.perf_counter() - start) + transmission.latency_seconds
+        record.latency_seconds = measured_latency()
         record.extra.update({
             "recovery_command": "STOP",
             "safety_hold": True,
@@ -331,16 +400,115 @@ def run_trial(
         return record
 
     target = planner.plan(payload)
-    execution = controller.execute(target)
+    initial_observations = scene_graph.get("visual_observations", {})
+    barcode_latched = bool(
+        initial_observations.get("barcode_inspection_complete")
+        and initial_observations.get("barcode_detected")
+    )
+    if (
+        str(getattr(target, "command", "STOP")).upper() == "STOP"
+        or float(getattr(target, "confidence", 0.0)) < 0.5
+        or target.destination is None
+    ):
+        record.failure_reason = "planner_safe_stop"
+        record.latency_seconds = measured_latency()
+        record.extra["action_target"] = target.as_dict()
+        return record
+
+    checkpoint_log: list[dict[str, Any]] = []
+
+    def replan_checkpoint(phase: str) -> ActionTarget | None:
+        nonlocal channel_latency, dropped_frames
+        for attempt in range(1, max(1, max_frame_attempts) + 1):
+            fresh = env.capture_rgb(camera="overhead", width=width, height=height)
+            fresh_detections = detector.detect(fresh)
+            if callable(visual_observer):
+                visual_observer(fresh_detections, camera="overhead", width=width, height=height)
+            fresh_scene = build_scene_graph(fresh_detections, width, height, task=instruction)
+            if condition_detections is not None:
+                fresh_scene["visual_observations"] = visual_observations_for_views(
+                    condition_detections
+                )
+            fresh_payload = build_payload(compression_level, fresh_scene, instruction, frame=fresh)
+            record.network_payload_bytes += fresh_payload.num_bytes
+            sent = channel.transmit(fresh_payload.num_bytes)
+            if advance_world_during_network and callable(getattr(env, "advance_idle", None)):
+                env.advance_idle(sent.latency_seconds)
+            channel_latency += sent.latency_seconds
+            if sent.delivered and callable(note_latency):
+                note_latency(sent.latency_seconds)
+            if not sent.delivered:
+                dropped_frames += 1
+                continue
+            candidate = planner.plan(fresh_payload)
+            temporal_latch = False
+            if (
+                barcode_latched
+                and target.destination == "conveyor"
+                and candidate.destination == "inspection_tray"
+            ):
+                candidate = target
+                temporal_latch = True
+            accepted = (
+                str(getattr(candidate, "command", "STOP")).upper() != "STOP"
+                and float(getattr(candidate, "confidence", 0.0)) >= 0.5
+                and candidate.destination is not None
+            )
+            checkpoint_log.append({
+                "phase": phase, "attempts": attempt,
+                "command": candidate.command, "destination": candidate.destination,
+                "accepted": accepted,
+                "temporal_barcode_latch": temporal_latch,
+            })
+            return candidate if accepted else None
+        checkpoint_log.append({"phase": phase, "attempts": max_frame_attempts, "accepted": False})
+        return None
+
+    start_session = getattr(controller, "start", None)
+    advance_session = getattr(controller, "advance", None)
+    if callable(start_session) and callable(advance_session):
+        session = start_session(target)
+        first_execution_phase = True
+        while session.phase not in {"complete", "failed"}:
+            if first_execution_phase:
+                phase_target = target
+            elif session.phase == "release":
+                reviewed = replan_checkpoint("release")
+                if reviewed is None:
+                    phase_target = None
+                else:
+                    checkpoint_log[-1]["requested_destination"] = reviewed.destination
+                    checkpoint_log[-1]["destination"] = target.destination
+                    checkpoint_log[-1]["destination_locked"] = True
+                    phase_target = target
+            else:
+                phase_target = replan_checkpoint(session.phase)
+            if phase_target is None:
+                session.result.failure_reason = "replanning_safe_stop"
+                session.phase = "failed"
+                break
+            target = phase_target
+            advance_session(session, target)
+            first_execution_phase = False
+        execution = session.result
+    else:
+        execution = controller.execute(target)
+    if execution.success:
+        audit = replan_checkpoint("post_release")
+        checkpoint_log[-1]["audit_only"] = True
+        checkpoint_log[-1]["motion_authority"] = False
+        checkpoint_log[-1]["audit_received"] = audit is not None
     record.success = execution.success
     record.steps = execution.steps
     record.failure_reason = execution.failure_reason
-    record.latency_seconds = (time.perf_counter() - start) + transmission.latency_seconds
+    record.latency_seconds = measured_latency()
     record.extra["action_target"] = target.as_dict()
+    record.extra["replanning_checkpoints"] = checkpoint_log
     return record
 
 
-def _build_env(scene: str, gui: bool, realtime: bool, warehouse_layout: str) -> Any:
+def _build_env(scene: str, gui: bool, realtime: bool, warehouse_layout: str,
+               inbound_feeder: bool = False) -> Any:
     from shared.environments import SO101MuJoCoEnvironment  # lazy: needs mujoco
 
     return SO101MuJoCoEnvironment(
@@ -350,6 +518,7 @@ def _build_env(scene: str, gui: bool, realtime: bool, warehouse_layout: str) -> 
         kinematic_control=True,
         scenario=scene,
         warehouse_layout=warehouse_layout,
+        inbound_feeder=inbound_feeder,
     )
 
 
@@ -368,7 +537,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         help="Minimum target-vs-alternative CLIP prototype margin.",
     )
     parser.add_argument("--compression", choices=[c.value for c in CompressionLevel], default="scene_graph")
-    parser.add_argument("--channel", choices=["clean", "degraded"], default="clean")
+    parser.add_argument("--channel", choices=["clean", "throttled", "restricted", "delayed", "degraded", "practical", "stressed", "extreme", "level1", "level2", "level3", "level4", "level5"], default="clean")
     parser.add_argument("--planner", choices=["gpt", "heuristic"], default="gpt")
     parser.add_argument("--checkpoint", type=Path, default=None, help="SmolVLA checkpoint for the local route.")
     parser.add_argument(
@@ -388,6 +557,12 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         default=3,
         help="Maximum fresh SmolVLA chunks before validated B recovery.",
     )
+    parser.add_argument("--frame-attempts", type=int, default=3)
+    parser.add_argument("--advance-world-during-network", action="store_true")
+    parser.add_argument("--inbound-feeder", action="store_true",
+                        help="Enable the bidirectional semicircular inbound feeder.")
+    parser.add_argument("--feeder-observation-delay", type=float, default=12.0,
+                        help="Seconds to advance an enabled feeder before inspection.")
     parser.add_argument(
         "--yolo-weights",
         default="outputs/train/warehouse_yolov8n_v9_single_wrist_damage_balanced/weights/best.pt",
@@ -403,7 +578,23 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     parser.add_argument(
         "--record-demo",
         action="store_true",
-        help="Record the original close angled observer view for every frame.",
+        help="Record each episode as an MP4 replay.",
+    )
+    parser.add_argument("--record-fps", type=int, default=10)
+    parser.add_argument(
+        "--post-run-seconds",
+        type=float,
+        default=1.0,
+        help="Simulation time to keep recording after task completion (default: 1 second).",
+    )
+    parser.add_argument(
+        "--record-camera", choices=("observer", "overhead"), default="observer"
+    )
+    parser.add_argument(
+        "--record-output",
+        type=Path,
+        default=None,
+        help="MP4 path for one episode; multiple episodes receive numbered names.",
     )
     parser.add_argument("--output", type=Path, default=Path("outputs/architecture_c_demo"))
     args = parser.parse_args(argv)
@@ -415,7 +606,8 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         YoloDetector,
     )
 
-    env = _build_env(args.scene, args.gui, args.realtime, args.warehouse_layout)
+    env = _build_env(args.scene, args.gui, args.realtime, args.warehouse_layout,
+                     args.inbound_feeder)
     detector = YoloDetector(
         model_path=args.yolo_weights,
         conf_threshold=args.conf_threshold,
@@ -444,6 +636,7 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
 
     run_dir = args.output / time.strftime("architecture_c-%Y%m%d-%H%M%S")
     config = {
+        "channel_benchmark_version": "v2-refined-thresholds",
         "scene": args.scene,
         "warehouse_layout": args.warehouse_layout,
         "clip_threshold": args.clip_threshold,
@@ -457,13 +650,18 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
         "policy_device": args.device,
         "clip_prototypes": str(args.clip_prototypes) if args.clip_prototypes.exists() else None,
         "record_demo": bool(args.record_demo),
+        "record_fps": args.record_fps,
+        "record_camera": args.record_camera,
     }
 
     records = []
     run_dir.mkdir(parents=True, exist_ok=True)
     try:
         for i in range(args.episodes):
-            demo_frames = [] if args.record_demo else None
+            if args.record_demo:
+                env.start_demo_recording(
+                    camera=args.record_camera, width=480, height=360, fps=args.record_fps
+                )
             channel = get_channel(args.channel, seed=args.seed + i, realtime=args.realtime)
             record = run_trial(
                 env=env,
@@ -480,20 +678,32 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
                 scene=args.scene,
                 routing_config=routing_config,
                 max_local_attempts=args.local_attempts,
-                demo_frames=demo_frames,
+                max_frame_attempts=args.frame_attempts,
+                advance_world_during_network=args.advance_world_during_network,
+                initial_world_delay=(args.feeder_observation_delay if args.inbound_feeder else 0.0),
+                demo_frames=None,
             )
             records.append(record)
-            if demo_frames:
-                from PIL import Image
-
-                images = [Image.fromarray(frame) for frame in demo_frames]
-                images[0].save(
-                    run_dir / f"episode_{i:04d}.gif",
-                    save_all=True,
-                    append_images=images[1:],
-                    duration=50,
-                    loop=0,
-                )
+            if (
+                args.record_demo
+                and args.post_run_seconds > 0
+                and callable(getattr(env, "advance_idle", None))
+            ):
+                env.advance_idle(args.post_run_seconds)
+            if args.record_demo:
+                frames = env.stop_demo_recording()
+                if args.record_output is None:
+                    video_path = run_dir / f"episode_{i:04d}.mp4"
+                elif args.episodes == 1:
+                    video_path = args.record_output
+                else:
+                    video_path = args.record_output.with_name(
+                        f"{args.record_output.stem}_{i:04d}.mp4"
+                    )
+                if video_path.suffix.lower() != ".mp4":
+                    raise ValueError("--record-output must end in .mp4")
+                _save_mp4(frames, video_path, args.record_fps)
+                print(f"[C] wrote replay {video_path} frames={len(frames)}")
             print(f"[C] episode {i}: route={record.route} escalated={record.escalated} "
                   f"clip={record.clip_confidence} success={record.success} "
                   f"bytes={record.network_payload_bytes}")

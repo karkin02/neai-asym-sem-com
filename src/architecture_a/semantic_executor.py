@@ -37,6 +37,15 @@ class SemanticExecutionResult:
     failure_reason: str | None = None
 
 
+@dataclass
+class SemanticExecutionSession:
+    """Resumable SmolVLA chunk execution state for visual replanning boundaries."""
+
+    target: Any
+    result: SemanticExecutionResult = field(default_factory=lambda: SemanticExecutionResult(False, 0))
+    phase: str = "chunk"
+
+
 class ArchitectureASmolVlaController:
     """Architecture A motion/safety adapter for a semantic planner target."""
 
@@ -64,6 +73,34 @@ class ArchitectureASmolVlaController:
         self.frames = []
         if self._runtime.available():
             self._runtime.reset(self._seed)
+
+    def start(self, target: Any) -> SemanticExecutionSession:
+        """Start a stopped session; the first validated chunk runs on ``advance``."""
+        return SemanticExecutionSession(target=target)
+
+    def advance(
+        self, session: SemanticExecutionSession, target: Any | None = None
+    ) -> SemanticExecutionSession:
+        """Run one bounded, previewed SmolVLA chunk between replanning checkpoints."""
+        if target is not None:
+            session.target = target
+        original_attempts = self._max_attempts
+        self._max_attempts = 1
+        try:
+            chunk_result = self.execute(session.target)
+        finally:
+            self._max_attempts = original_attempts
+        session.result.attempts += 1
+        session.result.steps += chunk_result.steps
+        session.result.joint_commands.extend(chunk_result.joint_commands)
+        session.result.final_info = chunk_result.final_info
+        session.result.success = chunk_result.success
+        session.result.failure_reason = chunk_result.failure_reason
+        if chunk_result.success:
+            session.phase = "complete"
+        elif session.result.attempts >= original_attempts:
+            session.phase = "failed"
+        return session
 
     def execute(self, target: Any) -> SemanticExecutionResult:
         destination = normalize_destination(getattr(target, "destination", None))

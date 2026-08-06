@@ -22,6 +22,14 @@ def test_barcode_routes_to_conveyor():
     assert result.destination == "conveyor"
 
 
+def test_barcode_in_damage_inspection_pose_routes_to_conveyor():
+    result = decide_condition_route(
+        {"barcode": [det("package", 0.9)],
+         "damage": [det("package", 0.9), det("barcode", 0.92)]}
+    )
+    assert result.destination == "conveyor"
+
+
 def test_grounded_package_without_barcode_routes_to_inspection():
     result = decide_condition_route(
         {"barcode": [det("package", 0.9)], "damage": [det("package", 0.8)]}

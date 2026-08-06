@@ -36,12 +36,56 @@ class ChannelConfig:
 CLEAN = ChannelConfig(
     name="clean", bandwidth_bytes_per_sec=1.0e9, latency_seconds=0.0, drop_probability=0.0
 )
-# Degraded: ~1 Mbit/s, 300 ms latency, 20% loss.
-DEGRADED = ChannelConfig(
-    name="degraded", bandwidth_bytes_per_sec=125_000.0, latency_seconds=0.30, drop_probability=0.20
+# Refined benchmark v2: isolate one impairment at a time at its measured edge.
+# Throttled: operational bandwidth boundary, without packet loss.
+THROTTLED = ChannelConfig(
+    name="throttled", bandwidth_bytes_per_sec=5_000.0, latency_seconds=0.30, drop_probability=0.0
 )
+# Restricted: observed bandwidth failure boundary.
+RESTRICTED = ChannelConfig(
+    name="restricted", bandwidth_bytes_per_sec=2_500.0, latency_seconds=0.30, drop_probability=0.0
+)
+# Delayed: tested one-way latency boundary with ample bandwidth.
+DELAYED = ChannelConfig(
+    name="delayed", bandwidth_bytes_per_sec=125_000.0, latency_seconds=10.0, drop_probability=0.0
+)
+# Degraded: isolated frame-loss boundary with otherwise practical transport.
+DEGRADED = ChannelConfig(
+    name="degraded", bandwidth_bytes_per_sec=125_000.0, latency_seconds=0.30, drop_probability=0.50
+)
+PRACTICAL = ChannelConfig(
+    name="practical", bandwidth_bytes_per_sec=5_000.0,
+    latency_seconds=2.0, drop_probability=0.10,
+)
+STRESSED = ChannelConfig(
+    name="stressed", bandwidth_bytes_per_sec=3_000.0,
+    latency_seconds=6.0, drop_probability=0.30,
+)
+EXTREME = ChannelConfig(
+    name="extreme", bandwidth_bytes_per_sec=2_500.0,
+    latency_seconds=10.0, drop_probability=0.50,
+)
+LEVEL_1 = ChannelConfig("level1", 125_000.0, 0.50, 0.00)
+LEVEL_2 = ChannelConfig("level2", 20_000.0, 1.00, 0.05)
+LEVEL_3 = ChannelConfig("level3", 5_000.0, 2.00, 0.10)
+LEVEL_4 = ChannelConfig("level4", 3_000.0, 4.00, 0.30)
+LEVEL_5 = ChannelConfig("level5", 2_500.0, 6.00, 0.50)
 
-PRESETS = {"clean": CLEAN, "degraded": DEGRADED}
+PRESETS = {
+    "clean": CLEAN,
+    "throttled": THROTTLED,
+    "restricted": RESTRICTED,
+    "delayed": DELAYED,
+    "degraded": DEGRADED,
+    "practical": PRACTICAL,
+    "stressed": STRESSED,
+    "extreme": EXTREME,
+    "level1": LEVEL_1,
+    "level2": LEVEL_2,
+    "level3": LEVEL_3,
+    "level4": LEVEL_4,
+    "level5": LEVEL_5,
+}
 
 
 @dataclass(frozen=True)
@@ -105,7 +149,7 @@ class ChannelSimulator:
 
 
 def get_channel(name: str, seed: int = 0, realtime: bool = False) -> ChannelSimulator:
-    """Build a :class:`ChannelSimulator` from a preset name (``clean``/``degraded``)."""
+    """Build a channel simulator from a named preset."""
     if name not in PRESETS:
         raise ValueError(f"Unknown channel '{name}'. Choose from {sorted(PRESETS)}.")
     return ChannelSimulator(PRESETS[name], seed=seed, realtime=realtime)

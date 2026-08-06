@@ -1,0 +1,82 @@
+{
+  "request_id": "job-007",
+  "status": "complete",
+  "result": {
+    "architecture": "B",
+    "episode_id": 0,
+    "seed": 40000,
+    "instruction": "Inspect and sort the detected package using visual evidence.",
+    "scene": "warehouse_normal",
+    "success": true,
+    "steps": 40,
+    "latency_seconds": 30.647,
+    "network_payload_bytes": 1649,
+    "clip_confidence": null,
+    "escalated": null,
+    "route": "cloud",
+    "channel_condition": "clean",
+    "compression_level": "scene_graph",
+    "failure_reason": null,
+    "extra": {
+      "action_target": {
+        "target_object": "package",
+        "destination": "conveyor",
+        "gripper": "close",
+        "reasoning": "The package has a valid barcode and no damage marks detected.",
+        "source": "gpt-4o-mini",
+        "command": "CONTINUE",
+        "confidence": 0.9703297019004822,
+        "evidence": [
+          "barcode_detected=true",
+          "damage_mark_detected=false"
+        ]
+      },
+      "visual_observations": {
+        "views_inspected": [
+          "overhead",
+          "barcode",
+          "damage"
+        ],
+        "package_detected": true,
+        "package_detected_by": [
+          "overhead",
+          "barcode",
+          "damage"
+        ],
+        "barcode_detected": true,
+        "barcode_detected_by": [
+          "barcode"
+        ],
+        "damage_mark_detected": false,
+        "damage_mark_detected_by": [],
+        "obstacle_detected": false,
+        "obstacle_detected_by": [],
+        "inspection_complete": true,
+        "barcode_inspection_complete": true,
+        "damage_inspection_complete": true,
+        "class_confidence_by_view": {
+          "overhead": {
+            "outbound_bin": 0.9875198602676392,
+            "conveyor": 0.7548834085464478,
+            "package": 0.647502064704895,
+            "left_tray": 0.38150644302368164,
+            "right_tray": 0.16866324841976166
+          },
+          "barcode": {
+            "barcode": 0.9825154542922974,
+            "package": 0.9703297019004822
+          },
+          "damage": {
+            "package": 0.9750966429710388,
+            "damage_mark": 0.14275698363780975,
+            "barcode": 0.10509863495826721
+          }
+        },
+        "barcode_max_confidence": 0.9825154542922974,
+        "damage_mark_max_confidence": 0.14275698363780975,
+        "barcode_confidence_threshold": 0.5,
+        "damage_mark_confidence_threshold": 0.45
+      }
+    }
+  }
+}

@@ -141,6 +141,22 @@ _SO101_XML = """
               contype="0" conaffinity="0" rgba="0.55 0.58 0.61 0"/>
       </body>
     </body>
+    <!-- Optional inbound feeder.  Twelve short belt sections approximate a
+         half loop from the left, around the robot-facing apex, to the right. -->
+    <body name="inbound_feeder" pos="0 0.08 0">
+      <geom name="feeder_segment_1" type="box" pos="-0.1180 -0.1445 0.064" size="0.0176 0.028 0.004" euler="0 0 1.4425" material="conveyor" contype="0" conaffinity="0" rgba="0.12 0.14 0.16 0"/>
+      <geom name="feeder_segment_2" type="box" pos="-0.1100 -0.1145 0.064" size="0.0177 0.028 0.004" euler="0 0 1.1785" material="conveyor" contype="0" conaffinity="0" rgba="0.12 0.14 0.16 0"/>
+      <geom name="feeder_segment_3" type="box" pos="-0.0945 -0.0875 0.064" size="0.0177 0.028 0.004" euler="0 0 0.9209" material="conveyor" contype="0" conaffinity="0" rgba="0.12 0.14 0.16 0"/>
+      <geom name="feeder_segment_4" type="box" pos="-0.0725 -0.0655 0.064" size="0.0177 0.028 0.004" euler="0 0 0.6499" material="conveyor" contype="0" conaffinity="0" rgba="0.12 0.14 0.16 0"/>
+      <geom name="feeder_segment_5" type="box" pos="-0.0455 -0.0500 0.064" size="0.0177 0.028 0.004" euler="0 0 0.3923" material="conveyor" contype="0" conaffinity="0" rgba="0.12 0.14 0.16 0"/>
+      <geom name="feeder_segment_6" type="box" pos="-0.0155 -0.0420 0.064" size="0.0176 0.028 0.004" euler="0 0 0.1283" material="conveyor" contype="0" conaffinity="0" rgba="0.12 0.14 0.16 0"/>
+      <geom name="feeder_segment_7" type="box" pos="0.0155 -0.0420 0.064" size="0.0176 0.028 0.004" euler="0 0 -0.1283" material="conveyor" contype="0" conaffinity="0" rgba="0.12 0.14 0.16 0"/>
+      <geom name="feeder_segment_8" type="box" pos="0.0455 -0.0500 0.064" size="0.0177 0.028 0.004" euler="0 0 -0.3923" material="conveyor" contype="0" conaffinity="0" rgba="0.12 0.14 0.16 0"/>
+      <geom name="feeder_segment_9" type="box" pos="0.0725 -0.0655 0.064" size="0.0177 0.028 0.004" euler="0 0 -0.6499" material="conveyor" contype="0" conaffinity="0" rgba="0.12 0.14 0.16 0"/>
+      <geom name="feeder_segment_10" type="box" pos="0.0945 -0.0875 0.064" size="0.0177 0.028 0.004" euler="0 0 -0.9209" material="conveyor" contype="0" conaffinity="0" rgba="0.12 0.14 0.16 0"/>
+      <geom name="feeder_segment_11" type="box" pos="0.1100 -0.1145 0.064" size="0.0177 0.028 0.004" euler="0 0 -1.1785" material="conveyor" contype="0" conaffinity="0" rgba="0.12 0.14 0.16 0"/>
+      <geom name="feeder_segment_12" type="box" pos="0.1180 -0.1445 0.064" size="0.0176 0.028 0.004" euler="0 0 -1.4425" material="conveyor" contype="0" conaffinity="0" rgba="0.12 0.14 0.16 0"/>
+    </body>
     <body name="outbound_bin" pos="0.385 0.30 0.018">
       <geom name="outbound_bin_floor" type="box" pos="0 0 0"
             size="0.085 0.085 0.012" material="outbound" rgba="0.12 0.62 0.30 0"/>
@@ -162,7 +178,7 @@ _SO101_XML = """
             contype="0" conaffinity="0" rgba="0.04 0.04 0.04 0"/>
     </body>
 
-    <body name="base" pos="0 -0.28 0">
+    <body name="base" pos="0 -0.22 0">
       <geom type="cylinder" size="0.07 0.035" pos="0 0 0.035" material="joint"/>
       <body name="shoulder_pan_link" pos="0 0 0.07">
         <joint name="shoulder_pan" type="hinge" axis="0 0 1"
@@ -258,6 +274,12 @@ class SO101MuJoCoEnvironment:
     digital twin of the production arm.
     """
 
+    GRASP_DISTANCE_TOLERANCE = 0.020
+    FEEDER_ANGLE_INSET = 0.25
+    FEEDER_ANGLE_MIN = np.pi + FEEDER_ANGLE_INSET
+    FEEDER_ANGLE_MAX = 2.0 * np.pi - FEEDER_ANGLE_INSET
+    FEEDER_PACKAGE_HEIGHT = 0.100
+
     JOINT_NAMES = (
         "shoulder_pan",
         "shoulder_lift",
@@ -274,25 +296,25 @@ class SO101MuJoCoEnvironment:
         "v1": {
             "left_tray": np.array((-0.17, 0.16, 0.075)),
             "right_tray": np.array((0.17, 0.16, 0.075)),
-            "conveyor": np.array((0.0, 0.30, 0.075)),
+            "conveyor": np.array((0.0, 0.30, 0.105)),
         },
         "v2": {
             "left_tray": np.array((-0.15, 0.14, 0.075)),
             "right_tray": np.array((0.15, 0.14, 0.075)),
-            "conveyor": np.array((0.0, 0.26, 0.075)),
+            "conveyor": np.array((0.0, 0.285, 0.105)),
         },
         "v3": {
             "left_tray": np.array((-0.15, 0.14, 0.075)),
             "right_tray": np.array((0.15, 0.14, 0.075)),
-            "conveyor": np.array((0.0, 0.26, 0.075)),
+            "conveyor": np.array((0.0, 0.285, 0.105)),
         },
     }
     WAREHOUSE_TARGET_POSITIONS = {
         "left_tray": np.array((-0.17, 0.16, 0.075)),
         "right_tray": np.array((0.17, 0.16, 0.075)),
-        "conveyor": np.array((0.0, 0.30, 0.075)),
+        "conveyor": np.array((0.0, 0.30, 0.105)),
     }
-    CONVEYOR_POSITION = np.array((0.0, 0.30, 0.075))
+    CONVEYOR_POSITION = np.array((0.0, 0.30, 0.105))
     SCENARIOS = (
         "pick_place",
         "warehouse_normal",
@@ -320,6 +342,7 @@ class SO101MuJoCoEnvironment:
         kinematic_control: bool = False,
         scenario: str = "pick_place",
         warehouse_layout: str = "v1",
+        inbound_feeder: bool = False,
     ) -> None:
         if scenario not in self.SCENARIOS:
             raise ValueError(
@@ -332,6 +355,10 @@ class SO101MuJoCoEnvironment:
         self._observation_images = observation_images
         self._kinematic_control = kinematic_control
         self._scenario = scenario
+        self._inbound_feeder = bool(inbound_feeder)
+        self._feeder_angle = self.FEEDER_ANGLE_MIN
+        self._feeder_direction = 1.0
+        self._feeder_package_claimed = False
         if warehouse_layout not in self.WAREHOUSE_LAYOUTS:
             raise ValueError(
                 f"Unknown warehouse layout {warehouse_layout!r}; expected v1, v2, or v3."
@@ -344,6 +371,12 @@ class SO101MuJoCoEnvironment:
         self.CONVEYOR_POSITION = self.WAREHOUSE_TARGET_POSITIONS["conveyor"].copy()
         self._viewer: Any | None = None
         self._renderers: dict[tuple[str, int, int], mujoco.Renderer] = {}
+        self._demo_frames: list[np.ndarray] = []
+        self._demo_recording = False
+        self._demo_record_counter = 0
+        self._demo_record_interval = 25
+        self._demo_record_camera = "observer"
+        self._demo_record_size = (320, 240)
         self._steps = 0
         self._conveyor_phase = 0.0
         self._collision_stop = False
@@ -429,6 +462,7 @@ class SO101MuJoCoEnvironment:
             for index in range(1, 8)
         )
         self._barcode_geom_names = tuple(f"barcode_{index}" for index in range(1, 5))
+        self._feeder_geom_names = tuple(f"feeder_segment_{index}" for index in range(1, 13))
         if gui:
             from mujoco import viewer
 
@@ -467,10 +501,39 @@ class SO101MuJoCoEnvironment:
         self._data.ctrl[:] = home
         self._steps = 0
         self._conveyor_phase = 0.0
+        self._feeder_angle = self.FEEDER_ANGLE_MIN
+        self._feeder_direction = 1.0
+        self._feeder_package_claimed = False
         self._collision_stop = False
         self._obstacle_tipped = False
         self._held = False
+        # During GUI reset the XML package would otherwise flash at its default
+        # table position. Hide every package layer while the arm settles, then
+        # reveal it only after its feeder pose has been installed.
+        feeder_enabled = self._inbound_feeder
+        package_geoms = (
+            "sample_geom",
+            "package_label",
+            *self._barcode_geom_names,
+            "damage_mark_1",
+            "damage_mark_2",
+            "damage_mark_front",
+            "damage_mark_side",
+        )
+        saved_package_alpha = {
+            name: float(self._model.geom(name).rgba[3]) for name in package_geoms
+        }
+        if feeder_enabled:
+            for name in package_geoms:
+                self._model.geom(name).rgba[3] = 0.0
+        self._inbound_feeder = False
         self._advance(250)
+        self._inbound_feeder = feeder_enabled
+        if feeder_enabled:
+            self._set_feeder_sample_position()
+            for name, alpha in saved_package_alpha.items():
+                self._model.geom(name).rgba[3] = alpha
+            mujoco.mj_forward(self._model, self._data)
         return self._observation()
 
     def step(self, action: Action) -> StepResult:
@@ -496,14 +559,14 @@ class SO101MuJoCoEnvironment:
             distance = np.linalg.norm(
                 self.end_effector_position - self.sample_position
             )
-            self._held = bool(distance < 0.075)
+            self._held = bool(distance < self.GRASP_DISTANCE_TOLERANCE)
+            if self._held and self._inbound_feeder:
+                self._feeder_package_claimed = True
         elif requested[5] >= 0.014:
             released_object = self._held
             self._held = False
         if self._kinematic_control:
             self._move_joints_kinematically(self._data.ctrl.copy(), frames=35)
-            if released_object:
-                self._advance(125)
         else:
             self._advance(35)
         self._steps += 1
@@ -541,9 +604,63 @@ class SO101MuJoCoEnvironment:
         renderer.update_scene(self._data, camera=camera)
         return renderer.render()
 
+    def start_demo_recording(
+        self,
+        *,
+        camera: str = "observer",
+        width: int = 320,
+        height: int = 240,
+        fps: int = 10,
+    ) -> None:
+        """Record simulation-time frames while the environment advances."""
+        if fps <= 0:
+            raise ValueError("fps must be positive")
+        self._demo_frames.clear()
+        self._demo_record_counter = 0
+        self._demo_record_interval = max(
+            1, round(1.0 / (fps * float(self._model.opt.timestep)))
+        )
+        self._demo_record_camera = camera
+        self._demo_record_size = (width, height)
+        self._demo_recording = True
+        self._record_demo_frame(force=True)
+
+    def stop_demo_recording(self) -> list[np.ndarray]:
+        """Stop recording and return the captured RGB frames."""
+        self._demo_recording = False
+        return list(self._demo_frames)
+
+    def _record_demo_frame(self, *, force: bool = False) -> None:
+        if not self._demo_recording:
+            return
+        self._demo_record_counter += 1
+        if not force and self._demo_record_counter % self._demo_record_interval:
+            return
+        width, height = self._demo_record_size
+        self._demo_frames.append(
+            self.capture_rgb(
+                camera=self._demo_record_camera,
+                width=width,
+                height=height,
+            ).copy()
+        )
+
+    def camera_pixel_to_world(self, pixel, *, camera: str, width: int, height: int,
+                              plane_z: float = 0.112) -> np.ndarray:
+        """Project a camera pixel onto a calibrated horizontal plane."""
+        camera_id = self._model.camera(camera).id
+        origin = self._data.cam_xpos[camera_id].copy()
+        rotation = self._data.cam_xmat[camera_id].reshape(3, 3)
+        fovy = float(self._model.camera(camera).fovy[0])
+        focal = 0.5 * height / np.tan(np.deg2rad(fovy) / 2.0)
+        u, v = (float(value) for value in pixel)
+        ray = rotation @ np.array(((u - width / 2) / focal,
+                                   -(v - height / 2) / focal, -1.0))
+        return origin + (float(plane_z) - origin[2]) / ray[2] * ray
+
     def capture_condition_views(
-        self, *, width: int = 320, height: int = 240
-    ) -> dict[str, np.ndarray]:
+        self, *, width: int = 320, height: int = 240, frames_per_view: int = 1
+    ) -> dict[str, np.ndarray | list[np.ndarray]]:
         """Capture non-destructive close views for barcode/damage inspection.
 
         Both views use the original policy wrist camera.  Only the arm pose is
@@ -552,33 +669,73 @@ class SO101MuJoCoEnvironment:
         """
         saved_qpos = self._data.qpos.copy()
         saved_qvel = self._data.qvel.copy()
+        physical_tracking = self._inbound_feeder
+        frame_count = max(1, int(frames_per_view))
         renderer = mujoco.Renderer(self._model, height=height, width=width)
         try:
+            def tracked_pose(calibrated_pose: np.ndarray) -> np.ndarray:
+                if not self._inbound_feeder:
+                    return calibrated_pose
+                current_qpos = self._data.qpos.copy()
+                current_qvel = self._data.qvel.copy()
+                for value, address in zip(calibrated_pose, self._joint_qpos_addresses):
+                    self._data.qpos[address] = value
+                self._data.qvel[:] = 0.0
+                mujoco.mj_forward(self._model, self._data)
+                reference_package = np.array((0.0, 0.08, 0.045))
+                translated_target = (
+                    self.end_effector_position
+                    + self.sample_position
+                    - reference_package
+                )
+                solution = np.asarray(self.solve_ik(translated_target, gripper=0.02))
+                self._data.qpos[:] = current_qpos
+                self._data.qvel[:] = current_qvel
+                mujoco.mj_forward(self._model, self._data)
+                return solution
+
             # Calibrated absolute arm poses. Package randomization in layout v3
             # remains inside both close views; these poses deliberately retain
             # the original wrist-camera intrinsics and mounting orientation.
-            wrist_joints = self.BARCODE_INSPECTION_POSE
-            for value, address in zip(wrist_joints, self._joint_qpos_addresses):
-                self._data.qpos[address] = value
-            self._data.qvel[:] = 0.0
-            mujoco.mj_forward(self._model, self._data)
-            renderer.update_scene(self._data, camera="wrist")
-            barcode = renderer.render().copy()
+            wrist_joints = tracked_pose(self.BARCODE_INSPECTION_POSE)
+            if physical_tracking:
+                self._move_joints_kinematically(wrist_joints, frames=125)
+            else:
+                for value, address in zip(wrist_joints, self._joint_qpos_addresses):
+                    self._data.qpos[address] = value
+                self._data.qvel[:] = 0.0
+                mujoco.mj_forward(self._model, self._data)
+            barcode_frames = []
+            for index in range(frame_count):
+                renderer.update_scene(self._data, camera="wrist")
+                barcode_frames.append(renderer.render().copy())
+                if physical_tracking and index + 1 < frame_count:
+                    self._advance(12)
 
-            damage_joints = self.DAMAGE_INSPECTION_POSE
-            for value, address in zip(damage_joints, self._joint_qpos_addresses):
-                self._data.qpos[address] = value
-            self._data.qvel[:] = 0.0
-            mujoco.mj_forward(self._model, self._data)
-            renderer.update_scene(self._data, camera="wrist")
-            damage = renderer.render().copy()
+            damage_joints = tracked_pose(self.DAMAGE_INSPECTION_POSE)
+            if physical_tracking:
+                self._move_joints_kinematically(damage_joints, frames=125)
+            else:
+                for value, address in zip(damage_joints, self._joint_qpos_addresses):
+                    self._data.qpos[address] = value
+                self._data.qvel[:] = 0.0
+                mujoco.mj_forward(self._model, self._data)
+            damage_frames = []
+            for index in range(frame_count):
+                renderer.update_scene(self._data, camera="wrist")
+                damage_frames.append(renderer.render().copy())
+                if physical_tracking and index + 1 < frame_count:
+                    self._advance(12)
 
         finally:
             renderer.close()
-            self._data.qpos[:] = saved_qpos
-            self._data.qvel[:] = saved_qvel
-            mujoco.mj_forward(self._model, self._data)
-        return {"barcode": barcode, "damage": damage}
+            if not physical_tracking:
+                self._data.qpos[:] = saved_qpos
+                self._data.qvel[:] = saved_qvel
+                mujoco.mj_forward(self._model, self._data)
+        if frame_count == 1:
+            return {"barcode": barcode_frames[0], "damage": damage_frames[0]}
+        return {"barcode": barcode_frames, "damage": damage_frames}
 
     def close(self) -> None:
         for renderer in self._renderers.values():
@@ -804,6 +961,8 @@ class SO101MuJoCoEnvironment:
         for name in self._warehouse_geom_names:
             geom = self._model.geom(name)
             geom.rgba[3] = 1.0 if warehouse else 0.0
+        for name in self._feeder_geom_names:
+            self._model.geom(name).rgba[3] = 1.0 if warehouse and self._inbound_feeder else 0.0
         barcode_visible = self._scenario == "warehouse_normal"
         for name in self._barcode_geom_names:
             self._model.geom(name).rgba[3] = 1.0 if barcode_visible else 0.0
@@ -819,10 +978,12 @@ class SO101MuJoCoEnvironment:
     def _advance(self, frames: int) -> None:
         for _ in range(frames):
             self._animate_conveyor()
+            self._drive_inbound_feeder_package()
             self._drive_conveyor_package()
             mujoco.mj_step(self._model, self._data)
             if self._held:
                 self._carry_sample()
+            self._record_demo_frame()
             if self._viewer is not None:
                 self._viewer.sync()
             if self._realtime:
@@ -860,10 +1021,15 @@ class SO101MuJoCoEnvironment:
         position = self.sample_position
         return bool(
             self._scenario in ("warehouse_normal", "damaged_vla_violation")
-            and 0.295 < float(position[0]) < 0.47
-            and abs(float(position[1]) - 0.30) < 0.08
-            and float(position[2]) < 0.10
+            and 0.20 < float(position[0]) < 0.275
+            and abs(float(position[1]) - float(self.CONVEYOR_POSITION[1])) < 0.08
+            and 0.085 < float(position[2]) < 0.14
         )
+
+    @property
+    def inbound_feeder_enabled(self) -> bool:
+        """Whether the package is presented on the moving inbound feeder."""
+        return self._inbound_feeder
 
     @property
     def collision_detected(self) -> bool:
@@ -894,12 +1060,14 @@ class SO101MuJoCoEnvironment:
                 self._data.qpos[address] = position[index]
             self._data.qvel[list(self._joint_dof_addresses)] = 0.0
             self._animate_conveyor()
+            self._drive_inbound_feeder_package()
             mujoco.mj_forward(self._model, self._data)
             if self._scenario == "obstacle_vla_violation" and self._arm_hit_obstacle():
                 self._collision_stop = True
                 break
             if self._held:
                 self._carry_sample()
+            self._record_demo_frame()
             if self._viewer is not None:
                 self._viewer.sync()
             if self._realtime:
@@ -1027,6 +1195,9 @@ class SO101MuJoCoEnvironment:
             "collision_stop": self._collision_stop,
             "obstacle_tipped": self._obstacle_tipped,
             "conveyor_phase": self._conveyor_phase,
+            "feeder_angle": self._feeder_angle,
+            "feeder_direction": self._feeder_direction,
+            "feeder_package_claimed": self._feeder_package_claimed,
             "viewer": self._viewer,
             "realtime": self._realtime,
         }
@@ -1053,6 +1224,9 @@ class SO101MuJoCoEnvironment:
             self._collision_stop = saved["collision_stop"]
             self._obstacle_tipped = saved["obstacle_tipped"]
             self._conveyor_phase = saved["conveyor_phase"]
+            self._feeder_angle = saved["feeder_angle"]
+            self._feeder_direction = saved["feeder_direction"]
+            self._feeder_package_claimed = saved["feeder_package_claimed"]
             self._viewer = saved["viewer"]
             self._realtime = saved["realtime"]
             mujoco.mj_forward(self._model, self._data)
@@ -1064,6 +1238,11 @@ class SO101MuJoCoEnvironment:
             float(self._data.qpos[address])
             for address in self._joint_qpos_addresses
         )
+
+    @property
+    def holding_package(self) -> bool:
+        """Local physical grasp state used by checkpoint safety logic."""
+        return bool(self._held)
 
     def _carry_sample(self) -> None:
         address = self._sample_qpos_address
@@ -1089,11 +1268,39 @@ class SO101MuJoCoEnvironment:
         position = self.sample_position
         on_belt = (
             abs(float(position[0])) < 0.29
-            and abs(float(position[1]) - 0.30) < 0.065
+            and abs(float(position[1]) - float(self.CONVEYOR_POSITION[1])) < 0.065
             and 0.085 < float(position[2]) < 0.14
         )
         if on_belt:
-            self._data.qvel[self._sample_dof_address] = 0.075
+            self._data.qvel[self._sample_dof_address] = (
+                0.0 if float(position[0]) >= 0.245 else 0.075
+            )
+
+    def _set_feeder_sample_position(self) -> None:
+        """Place the package on its current point of the front half-loop."""
+        radius = 0.12
+        x = radius * np.cos(self._feeder_angle)
+        y = -0.08 - radius * np.sin(self._feeder_angle)
+        position = np.array((x, y, self.FEEDER_PACKAGE_HEIGHT))
+        address = self._sample_qpos_address
+        self._data.qpos[address : address + 3] = position
+        self._data.qvel[self._sample_dof_address : self._sample_dof_address + 6] = 0.0
+
+    def _drive_inbound_feeder_package(self) -> None:
+        """Move along the semicircle and reverse at either endpoint."""
+        if not self._inbound_feeder or self._held or self._feeder_package_claimed:
+            return
+        speed = 0.010
+        self._feeder_angle += (
+            self._feeder_direction * speed * self._model.opt.timestep / 0.12
+        )
+        if self._feeder_angle >= self.FEEDER_ANGLE_MAX:
+            self._feeder_angle = self.FEEDER_ANGLE_MAX
+            self._feeder_direction = -1.0
+        elif self._feeder_angle <= self.FEEDER_ANGLE_MIN:
+            self._feeder_angle = self.FEEDER_ANGLE_MIN
+            self._feeder_direction = 1.0
+        self._set_feeder_sample_position()
 
     def _arm_hit_obstacle(self) -> bool:
         for index in range(self._data.ncon):

@@ -1,0 +1,57 @@
+{
+  "request_id": "job-010",
+  "status": "complete",
+  "result": {
+    "architecture": "B",
+    "episode_id": 3,
+    "seed": 70000,
+    "instruction": "Stop because an unexpected obstacle blocks the robot path.",
+    "scene": "unexpected_obstacle",
+    "success": true,
+    "steps": 0,
+    "latency_seconds": 0.34,
+    "network_payload_bytes": 2055,
+    "clip_confidence": null,
+    "escalated": null,
+    "route": "cloud",
+    "channel_condition": "clean",
+    "compression_level": "scene_graph",
+    "failure_reason": null,
+    "extra": {
+      "recovery_command": "STOP",
+      "safety_hold": true,
+      "obstacle_rechecks": 3,
+      "obstacle_recheck_labels": [
+        [
+          "outbound_bin",
+          "left_tray",
+          "package",
+          "conveyor",
+          "left_tray",
+          "right_tray",
+          "obstacle"
+        ],
+        [
+          "outbound_bin",
+          "left_tray",
+          "package",
+          "conveyor",
+          "left_tray",
+          "right_tray",
+          "obstacle"
+        ],
+        [
+          "outbound_bin",
+          "left_tray",
+          "package",
+          "conveyor",
+          "left_tray",
+          "right_tray",
+          "obstacle"
+        ]
+      ],
+      "joint_commands_executed": 0,
+      "stop_reason": "reported_obstacle_not_positively_verified_clear"
+    }
+  }
+}

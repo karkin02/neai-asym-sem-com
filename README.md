@@ -617,15 +617,56 @@ Flags:
 - `--compression {full_json,scene_graph,raw_image}` — how much of the scene
   crosses the channel (the bandwidth benchmark). `raw_image` sends the
   PNG-encoded frame; the JSON levels send the scene graph.
-- `--channel {clean,degraded}` — clean (oracle, effectively free) or degraded
-  (~1 Mbit/s, 300 ms latency, 20% loss). A dropped payload is recorded as a
-  `channel_drop` failure.
+- `--channel {clean,throttled,restricted,delayed,degraded,practical,stressed,extreme,level1,...,level5}` selects the payload-link
+  model. Refined benchmark v2 keeps each original preset orthogonal: clean is
+  effectively free; throttled isolates the operational bandwidth edge at
+  40 Kbps with 300 ms latency and no loss; restricted isolates the observed
+  failure edge at 20 Kbps with 300 ms latency and no loss; delayed uses
+  ~1 Mbit/s with 10 seconds of one-way latency; degraded uses ~1 Mbit/s,
+  300 ms latency, and 50% frame loss.
+  The combined limit profiles are `practical` (40 Kbps, 2 s, 10% loss),
+  `stressed` (24 Kbps, 6 s, 30% loss), and `extreme` (20 Kbps, 10 s, 50% loss).
+  For graded plots, `level1` through `level5` form a monotonic combined ladder:
+  1 Mbps/0.5 s/0%, 160 Kbps/1 s/5%, 40 Kbps/2 s/10%,
+  24 Kbps/4 s/30%, and 20 Kbps/6 s/50%, respectively.
+
+  The bidirectional semicircular feeder provides a physical coordination
+  boundary test. The package starts 35.5 seconds into its path, about 2.2
+  seconds before endpoint reversal; MuJoCo advances during every modeled link
+  delay, and each trial has a 60-second safe-stop deadline. At `level2`, the
+  normal, missing-barcode, and damaged-package matrix completed 3/3, routing to
+  the conveyor, inspection tray, and rejection tray respectively. At `level3`,
+  semantic perception and all three destinations remained correct, but only
+  the damaged-package grasp completed (1/3); normal and missing-barcode trials
+  missed the moving grasp at 19.457 and 18.802 seconds of modeled channel
+  latency. This observed boundary separates semantic routing correctness from
+  physical interception reliability; use `level2` or better for the moving
+  endpoint task and treat `level3` as degraded/best-effort. Supporting metrics
+  are under `outputs/architecture_b_demo/architecture_b-20260805-135348`,
+  `...-135404`, `...-135422`, `...-135925`, `...-135941`, and `...-135956`.
+
+  Add `--realtime` to sleep for the calculated payload delay; otherwise it is metrics-only. A
+  dropped observation is recaptured; `channel_drop` is recorded only after all
+  `--frame-attempts` (default 3) are lost.
+  `--advance-world-during-network` advances MuJoCo machinery by each modeled
+  channel delay, allowing stale-scene/coordination experiments without robot
+  commands; normally use it without `--realtime` to avoid sleeping twice.
 - `--planner {gpt,heuristic}` — `gpt` calls GPT-4o-mini (needs
   `OPENAI_API_KEY`); `heuristic` is a deterministic offline planner so B runs
   with no key/network. Both return a semantic command, destination, confidence,
   evidence list, and reasoning. GPT output is capped at 150 completion tokens;
   confidence below 0.5, `STOP`, or a missing destination causes a zero-joint
   local safe stop.
+- The resumable scripted baseline re-observes and replans before grasp and
+  carry. `STOP` interrupts before the next joint command and `REROUTE` may
+  change the destination before carry. The destination locks after carry;
+  release uses local safety and outcome validation because barcode/damage
+  evidence is certified only at the inspection poses.
+- Barcode evidence may come from either certified wrist inspection pose; an
+  overhead-only barcode is not accepted. An inspection view is complete only
+  when package confidence is at least 0.50. If a package face remains hidden
+  from both wrist poses, the planner returns `STOP` with zero joint commands;
+  object reorientation is not yet a certified inspection skill.
 - `--executor architecture_a` is the production path: A generates, bounds,
   forward-previews, executes, and validates SmolVLA action chunks locally.
   `--executor scripted` retains the deterministic pick/carry/release controller
@@ -642,6 +683,49 @@ list carrying `success`, `latency_seconds`, `network_payload_bytes`,
 `failure_reason`. These columns are a superset of Architecture A's per-episode
 record, so A/B/C merge into one comparison table (see the comparison section
 once it lands).
+
+For the compact moving-feeder demonstration, use
+`scripts/run_compact_feeder_inspection.py`. The package initializes at the
+feeder entry, moves into the central reachable region, receives exactly one
+barcode wrist view and one damage wrist view before pickup, and is then grasped
+and placed directly. Normal packages go to the downstream conveyor,
+missing-barcode packages to the inspection tray, and damaged packages to the
+rejection tray. No wrist inspection is repeated during carry or release. The
+older `scripts/run_grasp_first_feeder.py` name remains as a compatible entry
+point, but its implemented sequence is also inspection-first.
+
+The final compact layout uses a fixed SO-101 base at world `y=-0.22`, 60 mm
+closer to the feeder than the original layout. The feeder is a flat semicircle
+made from tangent-aligned plates using the same dark material and top height as
+the downstream conveyor. Its package-center endpoints are inset by 0.25 radian
+so the 60 mm package footprint never hangs beyond the belt. During reset all
+package layers are hidden while MuJoCo settles; the first visible package frame
+is already on the feeder with 2 mm vertical clearance. The belt moves at
+0.010 m/s and reverses at each inset endpoint.
+
+The final compact live-GPT matrix is recorded in
+`outputs/compact_feeder_gpt/compact-gpt-20260805-233734/comparison.json`.
+With physical seed 1010 and one channel seed, all nine combinations passed:
+normal, missing-barcode, and damaged packages each completed at `level1`,
+`level2`, and `level3` (9/9 total). Every task used seven local robot steps,
+one delivered fused scene-graph payload, and no repeated arm inspection.
+Modeled payload latency ranged from 0.513--0.515 seconds at `level1`,
+1.082--1.093 seconds at `level2`, and 2.326--2.374 seconds at `level3`.
+The missing-barcode route accepts GPT confidence calibration only when local
+vision certifies complete barcode and damage views, barcode absence, no damage,
+and package confidence of at least 0.50 in both wrist poses. The global 0.50
+safety threshold remains unchanged. A separate five-channel-seed `level3`
+heuristic run passed 15/15; deterministic seed 31 verified first-drop recovery
+on the second bounded transmission, while seed 570 verified safe stop before
+grasp when all three transmissions were dropped.
+
+These compact results supersede the older moving-endpoint result for the final
+demo path. The older result remains useful as an ablation: repeated semantic
+checkpoints and repeated arm inspections produced correct destinations but
+unreliable moving grasps at higher delay. The compact path instead inspects
+three frames at each of two wrist poses, majority-fuses evidence, transmits one
+scene graph with up to three bounded attempts, then performs a fresh local
+visual pickup-zone check before grasp.
 
 Known limitations:
 

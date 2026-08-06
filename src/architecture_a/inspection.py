@@ -49,7 +49,12 @@ def decide_condition_route(
     """
     barcode_view = tuple(views.get("barcode", ()))
     damage_view = tuple(views.get("damage", ()))
-    barcode = _maximum(barcode_view, "barcode")
+    # Both are certified poses of the same physical wrist camera. Accept a
+    # barcode visible in either pose; overhead detections remain ineligible.
+    barcode = max(
+        _maximum(barcode_view, "barcode"),
+        _maximum(damage_view, "barcode"),
+    )
     damage = _maximum(damage_view, "damage_mark")
     package = max(
         _maximum(barcode_view, "package"),

@@ -56,6 +56,7 @@ def visual_observations_for_views(
     *,
     barcode_threshold: float = BARCODE_CONFIDENCE_THRESHOLD,
     damage_threshold: float = DAMAGE_MARK_CONFIDENCE_THRESHOLD,
+    package_threshold: float = 0.50,
 ) -> dict[str, Any]:
     """Summarize multi-view detector labels without treating an unseen view as evidence."""
     normalized: dict[str, set[str]] = {}
@@ -72,12 +73,18 @@ def visual_observations_for_views(
             confidence_by_view[view][label] = max(
                 confidence, confidence_by_view[view].get(label, 0.0)
             )
-    package_views = [view for view, labels in normalized.items() if "package" in labels]
+    package_views = [
+        view
+        for view, labels in normalized.items()
+        if "package" in labels
+        and confidence_by_view[view].get("package", 0.0) >= package_threshold
+    ]
     barcode_views = [view for view, labels in normalized.items() if "barcode" in labels]
     damage_views = [view for view, labels in normalized.items() if "damage_mark" in labels]
     obstacle_views = [view for view, labels in normalized.items() if "obstacle" in labels]
     inspected_views = list(normalized)
-    barcode_evidence_views = ["barcode"] if "barcode" in normalized else list(normalized)
+    certified_barcode_views = [view for view in ("barcode", "damage") if view in normalized]
+    barcode_evidence_views = certified_barcode_views or list(normalized)
     damage_evidence_views = ["damage"] if "damage" in normalized else list(normalized)
     barcode_detected_by = [
         view
@@ -103,12 +110,12 @@ def visual_observations_for_views(
         "obstacle_detected_by": obstacle_views,
         "inspection_complete": bool(inspected_views) and len(package_views) == len(inspected_views),
         "barcode_inspection_complete": (
-            "package" in normalized.get("barcode", set())
+            confidence_by_view.get("barcode", {}).get("package", 0.0) >= package_threshold
             if "barcode" in normalized
             else bool(inspected_views) and len(package_views) == len(inspected_views)
         ),
         "damage_inspection_complete": (
-            "package" in normalized.get("damage", set())
+            confidence_by_view.get("damage", {}).get("package", 0.0) >= package_threshold
             if "damage" in normalized
             else bool(inspected_views) and len(package_views) == len(inspected_views)
         ),
@@ -121,6 +128,7 @@ def visual_observations_for_views(
         ),
         "barcode_confidence_threshold": float(barcode_threshold),
         "damage_mark_confidence_threshold": float(damage_threshold),
+        "package_confidence_threshold": float(package_threshold),
     }
 
 

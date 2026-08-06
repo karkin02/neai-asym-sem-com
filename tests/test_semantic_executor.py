@@ -81,6 +81,19 @@ class SemanticExecutorTest(unittest.TestCase):
         self.assertEqual(result.failure_reason, "unsupported_semantic_destination")
         self.assertEqual(env.steps, 0)
 
+    def test_resumable_chunk_waits_for_advance(self):
+        env = _Env()
+        controller = ArchitectureASmolVlaController(
+            env, SmolVlaRuntime(predictor=_Predictor())
+        )
+        session = controller.start(
+            ActionTarget("package", "conveyor", "open", "test", "fake")
+        )
+        self.assertEqual(env.steps, 0)
+        controller.advance(session)
+        self.assertEqual(session.phase, "complete")
+        self.assertTrue(session.result.success)
+
 
 if __name__ == "__main__":
     unittest.main()

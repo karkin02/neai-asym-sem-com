@@ -22,7 +22,7 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Optional, Protocol
 
 from .payload import CompressionLevel, Payload
@@ -75,6 +75,9 @@ _SCHEMA_INSTRUCTION = (
     "Use only detected visual evidence, including the detector-derived boolean "
     "visual_observations and their camera provenance. A false barcode is a "
     "reliable negative only when barcode_inspection_complete=true. "
+    "A complete barcode inspection with barcode_detected=false is affirmative "
+    "visual evidence of a missing-barcode defect, not uncertainty; when that "
+    "evidence is present, use confidence at least 0.5 for the inspection-tray reroute. "
     "Policy: damage_mark_detected=true => REROUTE to "
     "rejection_tray; barcode_inspection_complete=true with barcode_detected=false => "
     "REROUTE to inspection_tray; barcode_detected=true with no damage => "
@@ -170,7 +173,34 @@ class GptPlanner:
             max_completion_tokens=MAX_COMPLETION_TOKENS,
         )
         text = response.choices[0].message.content or ""
-        return parse_action_target(text, source=self.model)
+        target = parse_action_target(text, source=self.model)
+        scene = payload.content.get("scene", {}) if isinstance(payload.content, dict) else {}
+        observations = scene.get("visual_observations", {})
+        certified_missing_barcode = bool(
+            observations.get("barcode_inspection_complete")
+            and not observations.get("barcode_detected")
+            and observations.get("damage_inspection_complete")
+            and not observations.get("damage_mark_detected")
+        )
+        if (
+            certified_missing_barcode
+            and target.command == "REROUTE"
+            and target.destination == "inspection_tray"
+            and target.confidence < 0.5
+        ):
+            confidence_by_view = observations.get("class_confidence_by_view", {})
+            package_confidences = [
+                float(confidence_by_view.get(view, {}).get("package", 0.0))
+                for view in ("barcode", "damage")
+            ]
+            certified_confidence = min(package_confidences)
+            if certified_confidence >= 0.5:
+                target = replace(
+                    target,
+                    confidence=max(target.confidence, certified_confidence),
+                    evidence=target.evidence + ("certified_missing_barcode",),
+                )
+        return target
 
 
 class HeuristicPlanner:
@@ -193,6 +223,14 @@ class HeuristicPlanner:
         labels = ["package" if label in {"sample", "box", "parcel"} else label for label in labels]
         observations = scene.get("visual_observations", {})
         if observations.get("obstacle_detected") or "obstacle" in labels:
+            command, destination = "STOP", None
+        elif (
+            observations
+            and (
+                observations.get("barcode_inspection_complete") is False
+                or observations.get("damage_inspection_complete") is False
+            )
+        ):
             command, destination = "STOP", None
         elif observations.get("damage_mark_detected") or (
             not observations and "damage_mark" in labels

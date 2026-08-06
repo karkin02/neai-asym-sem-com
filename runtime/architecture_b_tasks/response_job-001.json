@@ -1,0 +1,5 @@
+{
+  "request_id": "job-001",
+  "status": "error",
+  "error": "Unexpected UTF-8 BOM (decode using utf-8-sig): line 1 column 1 (char 0)"
+}

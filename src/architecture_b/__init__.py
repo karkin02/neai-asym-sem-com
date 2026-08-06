@@ -6,7 +6,7 @@ scripted controller -> Architecture A's MuJoCo environment.
 
 from __future__ import annotations
 
-from .channel import CLEAN, DEGRADED, ChannelConfig, ChannelSimulator, get_channel
+from .channel import CLEAN, DEGRADED, DELAYED, EXTREME, PRACTICAL, RESTRICTED, STRESSED, THROTTLED, ChannelConfig, ChannelSimulator, get_channel
 from .controller import ScriptedController
 from .payload import CompressionLevel, Payload, build_payload
 from .planner import ActionTarget, GptPlanner, HeuristicPlanner, get_planner
@@ -22,6 +22,12 @@ def __getattr__(name: str):
 __all__ = [
     "CLEAN",
     "DEGRADED",
+    "THROTTLED",
+    "RESTRICTED",
+    "DELAYED",
+    "PRACTICAL",
+    "STRESSED",
+    "EXTREME",
     "ChannelConfig",
     "ChannelSimulator",
     "get_channel",

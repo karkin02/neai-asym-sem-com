@@ -124,6 +124,22 @@ class _FakeDetector:
         ]
 
 
+class _BarcodeDetector(_FakeDetector):
+    def detect(self, frame):
+        return super().detect(frame) + [Detection("barcode", 0.95, (12, 42, 20, 48))]
+
+
+class _SequencePlanner:
+    def __init__(self, targets):
+        self.targets = list(targets)
+        self.calls = 0
+
+    def plan(self, payload):
+        target = self.targets[min(self.calls, len(self.targets) - 1)]
+        self.calls += 1
+        return target
+
+
 def _fake_openai_client(content):
     message = types.SimpleNamespace(content=content)
     choice = types.SimpleNamespace(message=message)
@@ -171,6 +187,26 @@ class PayloadTest(unittest.TestCase):
         )
         self.assertFalse(observations["damage_mark_detected"])
         self.assertEqual(observations["damage_mark_max_confidence"], 0.3)
+
+    def test_weak_package_does_not_certify_damage_inspection(self):
+        observations = visual_observations_for_views({
+            "barcode": [types.SimpleNamespace(label="package", confidence=0.9)],
+            "damage": [types.SimpleNamespace(label="package", confidence=0.49)],
+        })
+        self.assertFalse(observations["damage_inspection_complete"])
+        self.assertFalse(observations["inspection_complete"])
+
+    def test_barcode_from_either_certified_wrist_pose_is_valid(self):
+        observations = visual_observations_for_views({
+            "overhead": [types.SimpleNamespace(label="barcode", confidence=0.99)],
+            "barcode": [types.SimpleNamespace(label="package", confidence=0.9)],
+            "damage": [
+                types.SimpleNamespace(label="package", confidence=0.9),
+                types.SimpleNamespace(label="barcode", confidence=0.92),
+            ],
+        })
+        self.assertTrue(observations["barcode_detected"])
+        self.assertEqual(observations["barcode_detected_by"], ["damage"])
 
     def test_scene_graph_smaller_than_full_json(self):
         graph, _ = _sample_graph()
@@ -241,6 +277,57 @@ class PlannerTest(unittest.TestCase):
         self.assertEqual(target.confidence, 0.9)
         self.assertEqual(client.calls[0]["max_completion_tokens"], MAX_COMPLETION_TOKENS)
 
+    def test_gpt_missing_barcode_confidence_uses_certified_visual_evidence(self):
+        graph = {
+            "objects": [{"id": "package_0", "label": "package"}],
+            "summary": [],
+            "visual_observations": {
+                "barcode_inspection_complete": True,
+                "barcode_detected": False,
+                "damage_inspection_complete": True,
+                "damage_mark_detected": False,
+                "class_confidence_by_view": {
+                    "barcode": {"package": 0.91},
+                    "damage": {"package": 0.87},
+                },
+            },
+        }
+        payload = build_payload(CompressionLevel.SCENE_GRAPH, graph, "inspect")
+        client = _fake_openai_client(
+            '{"command":"REROUTE","target_object":"package",'
+            '"destination":"inspection_tray","gripper":"open",'
+            '"confidence":0.0,"evidence":["barcode absent"],"reasoning":"missing"}'
+        )
+        target = GptPlanner(client=client).plan(payload)
+        self.assertEqual(target.destination, "inspection_tray")
+        self.assertAlmostEqual(target.confidence, 0.87)
+        self.assertIn("certified_missing_barcode", target.evidence)
+
+    def test_gpt_missing_barcode_confidence_stays_low_when_inspection_incomplete(self):
+        graph = {
+            "objects": [{"id": "package_0", "label": "package"}],
+            "summary": [],
+            "visual_observations": {
+                "barcode_inspection_complete": False,
+                "barcode_detected": False,
+                "damage_inspection_complete": True,
+                "damage_mark_detected": False,
+                "class_confidence_by_view": {
+                    "barcode": {"package": 0.91},
+                    "damage": {"package": 0.87},
+                },
+            },
+        }
+        payload = build_payload(CompressionLevel.SCENE_GRAPH, graph, "inspect")
+        client = _fake_openai_client(
+            '{"command":"REROUTE","target_object":"package",'
+            '"destination":"inspection_tray","gripper":"open",'
+            '"confidence":0.0,"evidence":[],"reasoning":"uncertain"}'
+        )
+        target = GptPlanner(client=client).plan(payload)
+        self.assertEqual(target.confidence, 0.0)
+        self.assertNotIn("certified_missing_barcode", target.evidence)
+
 
 # ---- Controller -----------------------------------------------------------
 class ControllerTest(unittest.TestCase):
@@ -249,27 +336,30 @@ class ControllerTest(unittest.TestCase):
         controller = ScriptedController(env)
         target = ActionTarget("sample", "inspection_tray", "open", "r", "test")
         result = controller.execute(target)
-        self.assertEqual(result.steps, 4)
+        self.assertEqual(result.steps, 5)
         grippers = [a.values[5] for a in env.calls]
-        self.assertEqual(grippers, [GRIPPER_OPEN, GRIPPER_CLOSE, GRIPPER_CLOSE, GRIPPER_OPEN])
+        self.assertEqual(
+            grippers,
+            [GRIPPER_OPEN, GRIPPER_CLOSE, GRIPPER_CLOSE, GRIPPER_OPEN, GRIPPER_OPEN],
+        )
         self.assertTrue(result.success)
         self.assertEqual(result.attempts, 1)
 
     def test_failed_release_reobserves_and_retries_once(self):
         env = _FakeEnv()
 
-        def succeed_on_eighth(action):
+        def succeed_on_ninth(action):
             env.calls.append(action)
             env._steps += 1
-            return _StepResult(success=(env._steps == 8))
+            return _StepResult(success=(env._steps == 9))
 
-        env.step = succeed_on_eighth
+        env.step = succeed_on_ninth
         result = ScriptedController(env, max_attempts=2).execute(
             ActionTarget("sample", "conveyor", "open", "r", "test")
         )
         self.assertTrue(result.success)
         self.assertEqual(result.attempts, 2)
-        self.assertEqual(result.steps, 8)
+        self.assertEqual(result.steps, 10)
 
     def test_planner_cannot_prevent_destination_release(self):
         env = _FakeEnv()
@@ -279,9 +369,39 @@ class ControllerTest(unittest.TestCase):
         self.assertEqual(env.calls[-1].values[5], GRIPPER_OPEN)
         self.assertTrue(result.success)
 
+    def test_resumable_controller_runs_one_phase_at_a_time(self):
+        env = _FakeEnv()
+        controller = ScriptedController(env)
+        target = ActionTarget("sample", "conveyor", "close", "r", "test")
+        session = controller.start(target)
+        self.assertEqual(len(env.calls), 0)
+        for expected in ("grasp", "carry", "release", "complete"):
+            controller.advance(session)
+            self.assertEqual(session.phase, expected)
+        self.assertTrue(session.result.success)
+        self.assertEqual(session.result.steps, 5)
+
+    def test_resumable_controller_accepts_reroute_before_carry(self):
+        env = _FakeEnv()
+        controller = ScriptedController(env)
+        original = ActionTarget("sample", "conveyor", "close", "r", "test")
+        reroute = ActionTarget("sample", "rejection_tray", "close", "r", "test")
+        session = controller.start(original)
+        controller.advance(session)
+        controller.advance(session)
+        controller.advance(session, reroute)
+        self.assertEqual(session.target.destination, "rejection_tray")
+
 
 # ---- run_trial ------------------------------------------------------------
 class RunTrialTest(unittest.TestCase):
+    @staticmethod
+    def _target(command="CONTINUE", destination="conveyor"):
+        return ActionTarget(
+            "sample", destination, "open", "test", "sequence",
+            command=command, confidence=1.0, evidence=("sample",),
+        )
+
     def _run(self, channel):
         return run_trial(
             env=_FakeEnv(),
@@ -308,6 +428,61 @@ class RunTrialTest(unittest.TestCase):
         record = self._run(ChannelSimulator(ChannelConfig("degraded", 125_000, 0.3, drop_probability=1.0)))
         self.assertFalse(record.success)
         self.assertEqual(record.failure_reason, "channel_drop")
+
+    def test_first_dropped_frame_recaptures_and_completes(self):
+        record = self._run(
+            ChannelSimulator(ChannelConfig("degraded", 125_000, 0.3, drop_probability=0.2), seed=1)
+        )
+        self.assertTrue(record.success)
+        self.assertEqual(record.extra["dropped_frames"], 1)
+        self.assertEqual(record.extra["frame_attempts"], 2)
+
+    def test_checkpoint_stop_prevents_next_joint_command(self):
+        env = _FakeEnv()
+        planner = _SequencePlanner([self._target(), self._target("STOP", None)])
+        record = run_trial(
+            env=env, detector=_FakeDetector(), planner=planner,
+            controller=ScriptedController(env),
+            channel=ChannelSimulator(ChannelConfig("clean", 1e9, 0.0)),
+            compression_level=CompressionLevel.SCENE_GRAPH,
+            instruction="move sample", seed=1, episode_id=0, scene="warehouse_normal",
+        )
+        self.assertFalse(record.success)
+        self.assertEqual(record.failure_reason, "replanning_safe_stop")
+        self.assertEqual(len(env.calls), 1)
+
+    def test_checkpoint_reroute_before_carry_completes(self):
+        env = _FakeEnv()
+        planner = _SequencePlanner([
+            self._target(), self._target(), self._target("REROUTE", "rejection_tray")
+        ])
+        record = run_trial(
+            env=env, detector=_FakeDetector(), planner=planner,
+            controller=ScriptedController(env),
+            channel=ChannelSimulator(ChannelConfig("clean", 1e9, 0.0)),
+            compression_level=CompressionLevel.SCENE_GRAPH,
+            instruction="move sample", seed=1, episode_id=0, scene="warehouse_normal",
+        )
+        self.assertTrue(record.success)
+        self.assertEqual(record.extra["action_target"]["destination"], "rejection_tray")
+
+    def test_certified_barcode_latches_against_later_missing_downgrade(self):
+        env = _FakeEnv()
+        planner = _SequencePlanner([
+            self._target(),
+            self._target("REROUTE", "inspection_tray"),
+            self._target("REROUTE", "inspection_tray"),
+        ])
+        record = run_trial(
+            env=env, detector=_BarcodeDetector(), planner=planner,
+            controller=ScriptedController(env),
+            channel=ChannelSimulator(ChannelConfig("clean", 1e9, 0.0)),
+            compression_level=CompressionLevel.SCENE_GRAPH,
+            instruction="move sample", seed=1, episode_id=0, scene="warehouse_normal",
+        )
+        self.assertTrue(record.success)
+        self.assertEqual(record.extra["action_target"]["destination"], "conveyor")
+        self.assertTrue(record.extra["replanning_checkpoints"][0]["temporal_barcode_latch"])
 
     def test_obstacle_holds_then_stops_without_controller_actions(self):
         env = _FakeEnv()
